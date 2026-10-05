@@ -20,7 +20,7 @@ export interface SuggestedStopChip {
   id: string
   label: string
   sublabel?: string | null
-  category?: RouteStopCategory
+  category?: RouteStopCategory | null
 }
 
 export interface SuggestedStopsProps {
