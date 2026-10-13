@@ -32,7 +32,7 @@ export function ProblemSection() {
     <section className="py-20">
       <div className="mx-auto max-w-4xl px-6">
         <p className="text-sm font-semibold uppercase tracking-wider text-primary">
-          Problem Statement
+          Why chose us
         </p>
         <h2 className="font-sans mt-3 text-balance text-3xl font-bold text-foreground">
           Why road trip planning is broken
@@ -58,8 +58,8 @@ export function ProblemSection() {
               key={point.title}
               className="rounded-xl border border-border bg-card p-6"
             >
-              <div className="mb-3 inline-flex h-10 w-10 items-center justify-center rounded-lg bg-accent/20">
-                <point.icon className="h-5 w-5 text-accent" />
+              <div className="mb-3 inline-flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+                <point.icon className="h-5 w-5 text-primary" />
               </div>
               <h3 className="font-sans text-lg font-bold text-card-foreground">
                 {point.title}
@@ -87,7 +87,7 @@ export function ProblemSection() {
               ].map((item, i) => (
                 <div key={item.step} className="flex items-center gap-3 md:flex-1">
                   <div className="flex flex-col items-center text-center">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-accent/20 font-sans text-sm font-bold text-accent">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 font-sans text-sm font-bold text-primary">
                       {item.step}
                     </div>
                     <p className="mt-2 text-sm font-semibold text-card-foreground">
@@ -101,7 +101,7 @@ export function ProblemSection() {
                 </div>
               ))}
             </div>
-            <p className="mt-6 text-center text-sm font-medium text-accent">
+            <p className="mt-6 text-center text-sm font-medium text-foreground">
               5+ apps, hours of work, fragile results
             </p>
           </div>

@@ -245,11 +245,10 @@ function ChatPageInner() {
   const [editText, setEditText] = useState('')
   const didSendStarterRef = useRef(false)
 
-  const { messages, sendMessage, status, setMessages, stop, addToolOutput } =
+  const { messages, sendMessage, status, error, regenerate: retryResponse, setMessages, stop, addToolOutput } =
     useChat({
       transport: new DefaultChatTransport({ api: '/api/chat' }),
       sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
-      onError: (err) => console.error('[chat] useChat error', err),
     })
 
   useEffect(() => {
@@ -257,7 +256,7 @@ function ChatPageInner() {
     const message = searchParams.get('message')
     if (message) {
       didSendStarterRef.current = true
-      sendMessage({ text: decodeURIComponent(message) })
+      sendMessage({ text: message })
     }
   }, [searchParams, sendMessage])
 
@@ -438,6 +437,24 @@ function ChatPageInner() {
               </div>
             )
           })}
+          {error && (
+            <div
+              role="alert"
+              className="rounded-xl border border-border bg-muted/50 p-4 text-sm space-y-3"
+            >
+              <p>{error.message || 'Trip planning is temporarily unavailable. Please try again.'}</p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={isLoading}
+                onClick={() => void retryResponse()}
+              >
+                <RotateCcw className="mr-2 h-3.5 w-3.5" />
+                Retry
+              </Button>
+            </div>
+          )}
         </ChatContainerContent>
         <ChatContainerScrollAnchor />
       </ChatContainerRoot>

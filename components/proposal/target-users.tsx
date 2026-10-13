@@ -1,5 +1,5 @@
 import Image from "next/image";
-import { Laptop, Battery, Sofa } from "lucide-react";
+import { Sofa } from "lucide-react";
 
 export function TargetUsers() {
   return (
@@ -13,7 +13,6 @@ export function TargetUsers() {
         </h2>
 
         <div className="mt-12 grid gap-8 md:grid-cols-2">
-          {/* Persona 1 */}
           <div className="overflow-hidden rounded-2xl border border-border bg-card">
             <div className="relative h-48">
               <Image
@@ -26,12 +25,6 @@ export function TargetUsers() {
               <div className="absolute inset-0 bg-gradient-to-t from-card to-transparent" />
             </div>
             <div className="p-6">
-              <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1">
-                <Laptop className="h-3.5 w-3.5 text-primary" />
-                <span className="text-xs font-semibold text-primary">
-                  Primary Persona
-                </span>
-              </div>
               <h3 className="font-sans text-xl font-bold text-card-foreground">
                 Tech-Savvy Travelers
               </h3>
@@ -44,7 +37,6 @@ export function TargetUsers() {
             </div>
           </div>
 
-          {/* Persona 2 */}
           <div className="overflow-hidden rounded-2xl border border-border bg-card">
             <div className="relative h-48">
               <Image
@@ -57,12 +49,6 @@ export function TargetUsers() {
               <div className="absolute inset-0 bg-gradient-to-t from-card to-transparent" />
             </div>
             <div className="p-6">
-              <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-accent/20 px-3 py-1">
-                <Battery className="h-3.5 w-3.5 text-accent" />
-                <span className="text-xs font-semibold text-accent">
-                  Key Segment
-                </span>
-              </div>
               <h3 className="font-sans text-xl font-bold text-card-foreground">
                 EV Road Trippers
               </h3>
@@ -95,18 +81,12 @@ export function TargetUsers() {
           </div>
         </div>
 
-        {/* User Needs Diagram */}
         <div className="mt-12">
           <h3 className="font-sans mb-6 text-center text-xl font-bold text-foreground">
-            Core User Needs
+            Features
           </h3>
           <div className="rounded-2xl border border-border bg-card p-8">
-            <div className="flex flex-col items-center gap-6">
-              <div className="flex h-20 w-20 items-center justify-center rounded-full bg-primary/10">
-                <span className="font-sans text-sm font-bold text-primary text-center leading-tight">
-                  User<br />Need
-                </span>
-              </div>
+            <div>
               <div className="grid w-full gap-4 md:grid-cols-3">
                 {[
                   {

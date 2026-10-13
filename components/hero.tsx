@@ -3,13 +3,14 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import createGlobe from "cobe";
-import { ArrowRight, MapPin, Navigation, Sparkles } from "lucide-react";
+import { ArrowRight, MapPin, Navigation } from "lucide-react";
 
 function Globe() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
     let phi = 0;
+    let animationFrame = 0;
     let globe: ReturnType<typeof createGlobe> | null = null;
 
     const canvas = canvasRef.current;
@@ -45,11 +46,12 @@ function Globe() {
     function animate() {
       phi += 0.003;
       globe?.update({ phi });
-      requestAnimationFrame(animate);
+      animationFrame = requestAnimationFrame(animate);
     }
-    animate();
+    if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) animate();
 
     return () => {
+      cancelAnimationFrame(animationFrame);
       globe?.destroy();
     };
   }, []);
@@ -57,6 +59,8 @@ function Globe() {
   return (
     <canvas
       ref={canvasRef}
+      role="img"
+      aria-label="A globe showing destinations around the world"
       className="aspect-square w-full"
       style={{ contain: "layout paint size" }}
     />
@@ -78,8 +82,8 @@ function TripForm() {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="mt-10 w-full max-w-md">
-      <div className="flex flex-col rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+    <form aria-label="Plan your road trip" onSubmit={handleSubmit} className="mt-8 w-full max-w-md">
+      <div className="flex flex-col rounded-2xl border border-border bg-card shadow-sm overflow-hidden transition-shadow focus-within:ring-2 focus-within:ring-foreground/20">
         {/* Start At */}
         <div className="flex items-center gap-3 px-4 py-3.5">
           <Navigation className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -88,7 +92,8 @@ function TripForm() {
             value={from}
             onChange={(e) => setFrom(e.target.value)}
             placeholder="Start at..."
-            className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none"
+            aria-label="Starting location"
+            className="min-w-0 flex-1 bg-transparent py-1 text-sm text-foreground placeholder:text-muted-foreground outline-none"
           />
         </div>
 
@@ -103,13 +108,14 @@ function TripForm() {
             value={to}
             onChange={(e) => setTo(e.target.value)}
             placeholder="Destination..."
-            className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none"
+            aria-label="Destination"
+            className="min-w-0 flex-1 bg-transparent py-1 text-sm text-foreground placeholder:text-muted-foreground outline-none"
           />
           <button
             type="submit"
             disabled={!canSubmit}
             aria-label="Plan trip"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-opacity hover:opacity-80 disabled:opacity-25 disabled:cursor-not-allowed"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground transition-opacity hover:opacity-80 disabled:opacity-25 disabled:cursor-not-allowed"
           >
             <ArrowRight className="h-4 w-4" />
           </button>
@@ -121,14 +127,18 @@ function TripForm() {
 
 export function Hero() {
   return (
-    <section className="relative flex min-h-screen items-center overflow-hidden bg-background pt-20">
-      <div className="mx-auto grid max-w-6xl grid-cols-1 items-center gap-12 px-6 py-24 md:grid-cols-2">
+    <section className="relative flex min-h-screen items-center overflow-hidden bg-background pt-16">
+      <div className="mx-auto grid w-full max-w-6xl grid-cols-1 items-center gap-10 px-6 py-16 md:grid-cols-2 md:gap-16 md:py-24">
         {/* Text */}
         <div>
-          <h1 className="font-serif text-balance text-5xl font-light leading-tight tracking-tight text-foreground md:text-6xl">
+          <p className="mb-6 text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">A little planning. A lot of possibility.</p>
+          <h1 className="font-serif text-balance text-5xl font-normal leading-[1.08] tracking-tight text-foreground md:text-6xl lg:text-7xl">
             EV trips, planned by AI
           </h1>
-
+          <p className="mt-6 max-w-md text-pretty text-base leading-relaxed text-muted-foreground md:text-lg">
+            Scenic routes, thoughtful stops, and EV charging along the way.
+            Start with where you want to go.
+          </p>
           <TripForm />
         </div>
 

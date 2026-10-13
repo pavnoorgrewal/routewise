@@ -110,7 +110,7 @@ export function IndustryTrends() {
               </p>
             </div>
             <div className="text-center">
-              <p className="font-sans text-3xl font-bold text-accent">
+              <p className="font-sans text-3xl font-bold text-primary">
                 #1
               </p>
               <p className="mt-1 text-sm text-muted-foreground">

@@ -12,6 +12,10 @@ import { z } from 'zod'
 
 export const maxDuration = 60
 
+const PLANNING_ERROR = 'Trip planning is temporarily unavailable. Please try again.'
+const LOCAL_SETUP_ERROR =
+  'AI trip planning is not configured locally. Add AI_GATEWAY_API_KEY to .env.local and restart the local server, then retry.'
+
 // ─── Tool Definitions ────────────────────────────────────────────────────────
 
 const askMultipleChoiceTool = tool({
@@ -223,7 +227,15 @@ export async function POST(req: Request) {
   try {
     modelMessages = await convertToModelMessages(messages)
   } catch {
-    return new Response('Internal Server Error', { status: 500 })
+    return new Response(PLANNING_ERROR, { status: 500 })
+  }
+
+  if (
+    !process.env.VERCEL &&
+    !process.env.AI_GATEWAY_API_KEY?.trim() &&
+    !process.env.VERCEL_OIDC_TOKEN?.trim()
+  ) {
+    return new Response(LOCAL_SETUP_ERROR, { status: 503 })
   }
 
   try {
@@ -236,8 +248,10 @@ export async function POST(req: Request) {
       abortSignal: req.signal,
     })
 
-    return result.toUIMessageStreamResponse()
+    return result.toUIMessageStreamResponse({
+      onError: () => PLANNING_ERROR,
+    })
   } catch {
-    return new Response('Internal Server Error', { status: 500 })
+    return new Response(PLANNING_ERROR, { status: 500 })
   }
 }

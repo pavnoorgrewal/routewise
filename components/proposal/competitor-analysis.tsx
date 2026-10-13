@@ -79,13 +79,13 @@ export function CompetitorAnalysis() {
                   </ul>
                 </div>
                 <div className="p-6">
-                  <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-accent">
+                  <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-primary">
                     Shortcomings
                   </p>
                   <ul className="flex flex-col gap-3">
                     {comp.weaknesses.map((w) => (
                       <li key={w} className="flex items-start gap-2">
-                        <X className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
+                        <X className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
                         <span className="text-sm text-muted-foreground">
                           {w}
                         </span>

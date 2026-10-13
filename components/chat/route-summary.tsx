@@ -7,7 +7,7 @@ import { RouteStopCategory } from './route-stop'
 export interface RouteSummaryStop {
   name: string
   location: string
-  category?: RouteStopCategory
+  category?: RouteStopCategory | null
   durationFromPrev?: string | null
 }
 
@@ -17,6 +17,7 @@ export interface RouteSummaryProps {
   stops?: RouteSummaryStop[]
   totalDistance?: string | null
   totalDuration?: string | null
+  approximateEta?: string | null
   vehicleModel?: string | null
   routeTag?: string | null
   state?: 'input-streaming' | 'input-available' | 'output-available'
