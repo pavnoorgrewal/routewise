@@ -6,12 +6,11 @@ import { ProblemSection } from "@/components/proposal/problem-section";
 import { TargetUsers } from "@/components/proposal/target-users";
 import { CompetitorAnalysis } from "@/components/proposal/competitor-analysis";
 import { IndustryTrends } from "@/components/proposal/industry-trends";
-import { References } from "@/components/proposal/references";
 
 export const metadata: Metadata = {
-  title: "Project Proposal - Routewise",
+  title: "The Story - Routewise",
   description:
-    "HCI Project Proposal for Routewise: AI-Powered Road Trip Planning for EV Drivers and Scenic Explorers.",
+    "The story behind Routewise: AI-Powered Road Trip Planning for EV Drivers and Scenic Explorers, founded by Pavnoor Singh Grewal.",
 };
 
 export default function ProposalPage() {
@@ -23,7 +22,6 @@ export default function ProposalPage() {
       <TargetUsers />
       <CompetitorAnalysis />
       <IndustryTrends />
-      <References />
       <Footer />
     </main>
   );

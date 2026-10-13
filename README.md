@@ -1,8 +1,8 @@
 # Routewise
 
-The original Routewise application, prepared for a separate deployment with
-`pavi7grewal` in its web address. The Routewise name, page content, styles, images,
-and animations are preserved.
+Routewise is an AI road trip planning application founded by Pavnoor Singh Grewal.
+The local site includes the trip planner and The Story, with streamlined
+navigation and responsive layouts.
 
 ## Run locally
 
@@ -13,7 +13,15 @@ npx pnpm@10.11.0 install --frozen-lockfile
 npm run dev
 ```
 
-Open http://localhost:3000.
+Open http://localhost:3000. The Next.js process serves both the website and its
+`/api/chat` backend locally; no Vercel deployment is needed.
+
+For AI trip planning, copy `.env.example` to `.env.local`, fill in your own
+`AI_GATEWAY_API_KEY`, then restart the development server. Without a key, the
+pages still work and the chat explains how to enable planning.
+
+The AI model itself is accessed through Vercel AI Gateway over the internet; it
+does not run offline on your computer.
 
 ## Validate
 
@@ -43,4 +51,4 @@ plans require gateway authentication and available usage credit.
 See [Vercel's gateway authentication documentation](https://vercel.com/docs/ai-gateway/authentication-and-byok)
 for the API key and automatic Vercel OIDC options.
 
-Pages: `/`, `/proposal`, `/user-research`, `/concept-design-report`, and `/chat`.
+Pages: `/`, `/proposal`, and `/chat`.
