@@ -3,6 +3,7 @@
 import { Zap, Coffee, Utensils, Bed, ShoppingBag, Star, TreePine, Music, MapPin } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { RouteStopCategory } from './route-stop'
+import { RouteMap } from './route-map'
 
 export interface RouteSummaryStop {
   name: string
@@ -208,6 +209,9 @@ export function RouteSummary({
 
 
       </div>
+      {origin && destination && (
+        <RouteMap origin={origin} destination={destination} stops={stops} />
+      )}
     </div>
   )
 }

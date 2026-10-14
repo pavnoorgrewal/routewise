@@ -17,11 +17,11 @@ Open http://localhost:3000. The Next.js process serves both the website and its
 `/api/chat` backend locally; no Vercel deployment is needed.
 
 For AI trip planning, copy `.env.example` to `.env.local`, fill in your own
-`AI_GATEWAY_API_KEY`, then restart the development server. Without a key, the
-pages still work and the chat explains how to enable planning.
+`OPENAI_API_KEY`, then restart the development server. A Vercel AI Gateway key
+(`AI_GATEWAY_API_KEY`) is also supported as an alternative. Without either
+provider configured, the pages load but trip generation is unavailable.
 
-The AI model itself is accessed through Vercel AI Gateway over the internet; it
-does not run offline on your computer.
+The model is accessed over the internet; it does not run offline on your computer.
 
 ## Validate
 
@@ -42,13 +42,26 @@ original `routewise.rehmatsg.com` deployment is independent of this copy.
 
 ## AI trip planning
 
-The `/api/chat` endpoint uses Vercel AI Gateway with `openai/gpt-5.4-mini`.
-The hosting account must have access to that model through AI Gateway. For local
-development, set `AI_GATEWAY_API_KEY` in `.env.local` using your own gateway key.
+The `/api/chat` endpoint uses OpenAI's `gpt-5.4-mini` through your direct
+`OPENAI_API_KEY` when it is set. Otherwise it uses `openai/gpt-5.4-mini` through
+Vercel AI Gateway. In Vercel, add your chosen key under the project's Environment
+Variables and redeploy. API billing is separate from a ChatGPT subscription.
 Never commit API keys. Page rendering works without an AI key, but generated trip
-plans require gateway authentication and available usage credit.
+plans require provider authentication and available usage credit.
 
-See [Vercel's gateway authentication documentation](https://vercel.com/docs/ai-gateway/authentication-and-byok)
-for the API key and automatic Vercel OIDC options.
+For direct OpenAI access, create a key in the [OpenAI API dashboard](https://platform.openai.com/api-keys).
+For the gateway alternative, see [Vercel's authentication documentation](https://vercel.com/docs/ai-gateway/authentication-and-byok).
+
+## Route maps
+
+Every generated itinerary includes a Google Maps directions link with its stops.
+For an interactive map inside the itinerary, enable the Google Maps Embed API in
+Google Cloud and set `NEXT_PUBLIC_GOOGLE_MAPS_EMBED_KEY` locally and in Vercel.
+Google requires a Maps API key and billing account for embeds. Restrict this
+browser-visible key to your site's HTTP referrers and the Maps Embed API. Routes
+and travel times shown in the AI itinerary are estimates until checked against
+the map; live charging-station availability is not connected.
+See [Google's Maps Embed API setup](https://developers.google.com/maps/documentation/embed/get-api-key)
+for key and billing setup. The external Google Maps link works without it.
 
 Pages: `/`, `/proposal`, and `/chat`.
