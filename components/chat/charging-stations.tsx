@@ -61,7 +61,7 @@ function AmenityIcon({ label }: { label: string }) {
 
 export function ChargingStations({
   stations,
-  title = 'Charging stops along the way',
+  title = 'Suggested charging stops',
   state = 'input-available',
 }: ChargingStationsProps) {
   if (state === 'input-streaming') {
@@ -169,6 +169,9 @@ export function ChargingStations({
           )
         })}
       </div>
+      <p className="text-xs text-muted-foreground">
+        These are planning suggestions. Confirm connector compatibility, location, and availability with the charging network before departure.
+      </p>
     </div>
   )
 }

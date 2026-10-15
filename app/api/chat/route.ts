@@ -9,12 +9,13 @@ import {
   validateUIMessages,
 } from 'ai'
 import { z } from 'zod'
+import { openai } from '@ai-sdk/openai'
 
 export const maxDuration = 60
 
 const PLANNING_ERROR = 'Trip planning is temporarily unavailable. Please try again.'
 const LOCAL_SETUP_ERROR =
-  'AI trip planning is not configured locally. Add AI_GATEWAY_API_KEY to .env.local and restart the local server, then retry.'
+  'AI trip planning is not configured. Add OPENAI_API_KEY to .env.local (or your Vercel environment variables), then restart and retry.'
 
 // ─── Tool Definitions ────────────────────────────────────────────────────────
 
@@ -167,6 +168,8 @@ const SYSTEM_PROMPT = `You are Routewise, a friendly and knowledgeable AI road t
 ## CRITICAL RULES
 - This product is exclusively for EV trip planning. NEVER mention gas stations, fuel stops, gas breaks, gasoline, or anything related to internal combustion engines. The "fuel" category in our tools means EV charging.
 - When suggesting stops along the route, plan around EV charging needs (typical EV range 200-300 miles between charges).
+- You do not have access to live maps, road closures, charger status, or reservation systems. State that routes, drive times, and charging suggestions are estimates. Never claim a charger is available, operational, or compatible without verified data.
+- Do not invent exact charger port counts, power ratings, or real-time availability. Use null for unknown fields and invite the traveler to verify the route and charger details before departure.
 - After collecting the user's preferences, IMMEDIATELY produce the final Route Summary. Do NOT ask the user to confirm the plan first. The user will follow up with changes if they want adjustments.
 
 ## Conversation Flow
@@ -192,7 +195,7 @@ Use when there are 2+ viable route alternatives (e.g. coastal vs. inland, PCH vs
 Use to display a curated list of specific recommended stops (real restaurants, cafes, viewpoints, attractions) once the route is established. Show 3-6 stops at a time. NEVER use this for gas/fuel — use showChargingStations for charging.
 
 ### showChargingStations
-Use proactively for any trip over ~150 miles. Show 2-4 strategically-placed charging stations along the route. Include real charger networks (Tesla Supercharger, Electrify America, EVgo, ChargePoint), realistic kW speeds, port counts, and nearby amenities (cafes, shops, restrooms).
+Use proactively for any trip over ~150 miles. Show 2-4 candidate charging areas along the route. Include a network or specific station only when reasonably confident it exists. Set unknown kW speeds, port counts, and amenities to null. The traveler must verify locations, compatibility, and availability before driving.
 
 ### showRouteSummary
 The "final plan" view with origin → stops → destination timeline. Call this AFTER preferences are collected — do not wait for confirmation. Include: origin, destination, intermediate stops (mix of charging stops and points of interest), totalDistance, totalDuration, approximateEta. If the user has mentioned their EV model, pass it as vehicleModel. Always pass a routeTag (e.g. "Fastest Route", "Scenic Route", "EV-Optimized"). For charging stops, use category 'fuel' (which renders as Charging in the UI).
@@ -208,15 +211,21 @@ The "final plan" view with origin → stops → destination timeline. Call this 
 export async function POST(req: Request) {
   let body: unknown
   try {
-    body = await req.json()
+    const raw = await req.text()
+    if (raw.length > 64_000) return new Response('Request too large', { status: 413 })
+    body = JSON.parse(raw)
   } catch {
     return new Response('Bad Request', { status: 400 })
   }
 
   let messages: ChatMessage[]
   try {
+    const submitted = (body as { messages?: ChatMessage[] }).messages
+    if (!Array.isArray(submitted) || submitted.length < 1 || submitted.length > 40) {
+      return new Response('Bad Request', { status: 400 })
+    }
     messages = await validateUIMessages<ChatMessage>({
-      messages: (body as { messages: ChatMessage[] }).messages,
+      messages: submitted,
       tools,
     })
   } catch {
@@ -231,6 +240,7 @@ export async function POST(req: Request) {
   }
 
   if (
+    !process.env.OPENAI_API_KEY?.trim() &&
     !process.env.VERCEL &&
     !process.env.AI_GATEWAY_API_KEY?.trim() &&
     !process.env.VERCEL_OIDC_TOKEN?.trim()
@@ -240,7 +250,9 @@ export async function POST(req: Request) {
 
   try {
     const result = streamText({
-      model: 'openai/gpt-5.4-mini',
+      model: process.env.OPENAI_API_KEY?.trim()
+        ? openai('gpt-5.4-mini')
+        : 'openai/gpt-5.4-mini',
       system: SYSTEM_PROMPT,
       messages: modelMessages,
       tools,

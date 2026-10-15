@@ -6,6 +6,7 @@ import { ProblemSection } from "@/components/proposal/problem-section";
 import { TargetUsers } from "@/components/proposal/target-users";
 import { CompetitorAnalysis } from "@/components/proposal/competitor-analysis";
 import { IndustryTrends } from "@/components/proposal/industry-trends";
+import { AssistantLauncher } from "@/components/assistant-launcher";
 
 export const metadata: Metadata = {
   title: "The Story - Routewise",
@@ -23,6 +24,7 @@ export default function ProposalPage() {
       <CompetitorAnalysis />
       <IndustryTrends />
       <Footer />
+      <AssistantLauncher />
     </main>
   );
 }

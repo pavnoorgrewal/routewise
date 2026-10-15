@@ -4,7 +4,7 @@ const features = [
   {
     title: "AI-Powered Planning",
     description:
-      "Describe your trip and watch AI build a complete itinerary with stops, timing, and reservations.",
+      "Describe your trip and get an itinerary with suggested stops, estimated timing, and charging plans.",
     mockup: (
       <div className="flex flex-col gap-3">
         <div className="rounded-lg bg-zinc-800 p-3">
