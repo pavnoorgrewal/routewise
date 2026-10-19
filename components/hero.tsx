@@ -118,13 +118,6 @@ function TripForm() {
           </button>
         </div>
       </div>
-      <p className="mt-2 text-xs text-muted-foreground">
-        Location suggestions use data from{' '}
-        <a href="https://www.geonames.org/" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-foreground">
-          GeoNames
-        </a>
-        . You can also type your own location.
-      </p>
     </form>
   );
 }

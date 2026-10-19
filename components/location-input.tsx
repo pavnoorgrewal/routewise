@@ -1,13 +1,13 @@
 'use client'
 
 import { useEffect, useId, useState } from 'react'
-import { MapPin, Plane, Trees } from 'lucide-react'
+import { MapPin, Plane, Store, Trees } from 'lucide-react'
 
 type Suggestion = {
   label: string
   detail: string
   value: string
-  type: 'city' | 'airport' | 'place'
+  type: 'city' | 'airport' | 'park' | 'place' | 'business' | 'address'
 }
 
 type LocationInputProps = {
@@ -51,7 +51,7 @@ export function LocationInput({ value, onChange, placeholder, label }: LocationI
       } finally {
         if (!controller.signal.aborted) setLoading(false)
       }
-    }, value.trim() ? 180 : 0)
+    }, value.trim() ? 350 : 0)
 
     return () => {
       window.clearTimeout(timer)
@@ -114,7 +114,7 @@ export function LocationInput({ value, onChange, placeholder, label }: LocationI
           className="absolute left-[-2.75rem] right-[-1rem] top-full z-50 mt-3 max-h-72 overflow-y-auto rounded-xl border border-border bg-popover p-1 shadow-xl"
         >
           {suggestions.map((suggestion, index) => {
-            const Icon = suggestion.type === 'airport' ? Plane : suggestion.type === 'place' ? Trees : MapPin
+            const Icon = suggestion.type === 'airport' ? Plane : suggestion.type === 'park' ? Trees : suggestion.type === 'business' ? Store : MapPin
             return (
               <button
                 key={`${suggestion.type}-${suggestion.value}`}
@@ -143,7 +143,9 @@ export function LocationInput({ value, onChange, placeholder, label }: LocationI
                 ? 'Type at least 2 letters to search.'
                 : failed
                   ? 'Suggestions are unavailable. You can still type a location.'
-                  : 'No matches. You can still type a location.'}
+                  : /^\d/.test(value.trim())
+                    ? 'No address match yet. Add a city and state, or enter it manually.'
+                    : 'No matches. You can still type a location.'}
             </p>
           )}
           {loading && <p className="px-3 py-2.5 text-sm text-muted-foreground">Finding places...</p>}
