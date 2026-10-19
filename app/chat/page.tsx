@@ -1,6 +1,7 @@
 'use client'
 
 import { Suspense, useState, useEffect, useRef } from 'react'
+import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { useChat } from '@ai-sdk/react'
 import {
@@ -8,7 +9,7 @@ import {
   UIMessage,
   lastAssistantMessageIsCompleteWithToolCalls,
 } from 'ai'
-import { ArrowUp, RotateCcw, Pencil, Check, X, Square } from 'lucide-react'
+import { ArrowUp, RotateCcw, Pencil, Check, X, Square, Route } from 'lucide-react'
 
 import { MultipleChoice } from '@/components/chat/multiple-choice'
 import { RouteStopList } from '@/components/chat/route-stop'
@@ -302,7 +303,19 @@ function ChatPageInner() {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-background font-sans">
+    <div className="flex h-dvh flex-col bg-background font-sans">
+      <header className="shrink-0 border-b border-border/70 bg-background">
+        <nav aria-label="Chat navigation" className="mx-auto flex h-14 max-w-3xl items-center px-4">
+          <Link
+            href="/"
+            aria-label="Routewise home"
+            className="inline-flex items-center gap-2.5 rounded-md text-lg font-semibold tracking-tight text-foreground transition-colors hover:text-foreground/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            <Route aria-hidden="true" className="h-5 w-5" />
+            Routewise
+          </Link>
+        </nav>
+      </header>
       <ChatContainerRoot className="flex-1 min-h-0">
         <ChatContainerContent className="max-w-3xl mx-auto w-full px-4 py-6 space-y-6">
           {isEmpty && (
