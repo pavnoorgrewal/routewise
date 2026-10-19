@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import createGlobe from "cobe";
 import { ArrowRight, MapPin, Navigation } from "lucide-react";
+import { LocationInput } from "@/components/location-input";
 
 function Globe() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -83,17 +84,15 @@ function TripForm() {
 
   return (
     <form aria-label="Plan your road trip" onSubmit={handleSubmit} className="mt-8 w-full max-w-md">
-      <div className="flex flex-col rounded-2xl border border-border bg-card shadow-sm overflow-hidden transition-shadow focus-within:ring-2 focus-within:ring-foreground/20">
+      <div className="flex flex-col rounded-2xl border border-border bg-card shadow-sm transition-shadow focus-within:ring-2 focus-within:ring-foreground/20">
         {/* Start At */}
         <div className="flex items-center gap-3 px-4 py-3.5">
           <Navigation className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <input
-            type="text"
+          <LocationInput
             value={from}
-            onChange={(e) => setFrom(e.target.value)}
+            onChange={setFrom}
             placeholder="Start at..."
-            aria-label="Starting location"
-            className="min-w-0 flex-1 bg-transparent py-1 text-sm text-foreground placeholder:text-muted-foreground outline-none"
+            label="Starting location"
           />
         </div>
 
@@ -103,13 +102,11 @@ function TripForm() {
         {/* Destination */}
         <div className="flex items-center gap-3 px-4 py-3.5">
           <MapPin className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <input
-            type="text"
+          <LocationInput
             value={to}
-            onChange={(e) => setTo(e.target.value)}
+            onChange={setTo}
             placeholder="Destination..."
-            aria-label="Destination"
-            className="min-w-0 flex-1 bg-transparent py-1 text-sm text-foreground placeholder:text-muted-foreground outline-none"
+            label="Destination"
           />
           <button
             type="submit"
@@ -121,13 +118,20 @@ function TripForm() {
           </button>
         </div>
       </div>
+      <p className="mt-2 text-xs text-muted-foreground">
+        Location suggestions use data from{' '}
+        <a href="https://www.geonames.org/" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-foreground">
+          GeoNames
+        </a>
+        . You can also type your own location.
+      </p>
     </form>
   );
 }
 
 export function Hero() {
   return (
-    <section className="relative flex min-h-screen items-center overflow-hidden bg-background pt-16">
+    <section className="relative z-10 flex min-h-screen items-center bg-background pt-16">
       <div className="mx-auto grid w-full max-w-6xl grid-cols-1 items-center gap-10 px-6 py-16 md:grid-cols-2 md:gap-16 md:py-24">
         {/* Text */}
         <div>
