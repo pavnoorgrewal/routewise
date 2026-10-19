@@ -130,7 +130,7 @@ export function Hero() {
         <div>
           <p className="mb-6 text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">A little planning. A lot of possibility.</p>
           <h1 className="font-serif text-balance text-5xl font-normal leading-[1.08] tracking-tight text-foreground md:text-6xl lg:text-7xl">
-            EV trips, planned by AI
+            EV trips, planned for You
           </h1>
           <p className="mt-6 max-w-md text-pretty text-base leading-relaxed text-muted-foreground md:text-lg">
             Scenic routes, thoughtful stops, and EV charging along the way.
