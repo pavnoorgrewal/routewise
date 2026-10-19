@@ -16,10 +16,10 @@ npm run dev
 Open http://localhost:3000. The Next.js process serves both the website and its
 `/api/chat` backend locally; no Vercel deployment is needed.
 
-For AI trip planning, copy `.env.example` to `.env.local`, fill in your own
-`OPENAI_API_KEY`, then restart the development server. A Vercel AI Gateway key
-(`AI_GATEWAY_API_KEY`) is also supported as an alternative. Without either
-provider configured, the pages load but trip generation is unavailable.
+For AI trip planning, copy `.env.example` to `.env.local`, create a free-tier
+[Gemini API key in Google AI Studio](https://aistudio.google.com/app/apikey),
+set `GOOGLE_GENERATIVE_AI_API_KEY`, then restart the development server. Without
+a provider configured, the pages load but trip generation is unavailable.
 
 The model is accessed over the internet; it does not run offline on your computer.
 
@@ -42,12 +42,19 @@ original `routewise.rehmatsg.com` deployment is independent of this copy.
 
 ## AI trip planning
 
-The `/api/chat` endpoint uses OpenAI's `gpt-5.4-mini` through your direct
-`OPENAI_API_KEY` when it is set. Otherwise it uses `openai/gpt-5.4-mini` through
-Vercel AI Gateway. In Vercel, add your chosen key under the project's Environment
-Variables and redeploy. API billing is separate from a ChatGPT subscription.
-Never commit API keys. Page rendering works without an AI key, but generated trip
-plans require provider authentication and available usage credit.
+The `/api/chat` endpoint prefers Google's `gemini-2.5-flash` through the direct
+Gemini API when `GOOGLE_GENERATIVE_AI_API_KEY` is set. Gemini 2.5 Flash has a
+free tier with rate limits; check [Google's current pricing](https://ai.google.dev/gemini-api/docs/pricing)
+and [your quota in AI Studio](https://aistudio.google.com/usage). Google says
+free-tier content may be used to improve its products, so avoid entering
+sensitive information in trip chats.
+
+If no Gemini key is set, the existing `OPENAI_API_KEY` or Vercel AI Gateway
+configuration still uses OpenAI's `gpt-5.4-mini`. Those alternatives may incur
+charges. In Vercel, add your chosen key under the project's Environment
+Variables and redeploy. Never commit API keys. Page rendering works without an
+AI key, but generated trip plans require provider authentication and available
+quota.
 
 For direct OpenAI access, create a key in the [OpenAI API dashboard](https://platform.openai.com/api-keys).
 For the gateway alternative, see [Vercel's authentication documentation](https://vercel.com/docs/ai-gateway/authentication-and-byok).
