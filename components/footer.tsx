@@ -21,6 +21,11 @@ export function Footer() {
           <p>© {new Date().getFullYear()} Routewise.</p>
           <p>Founded by Pavnoor Singh Grewal</p>
         </div>
+        <p className="mt-3 text-[11px] text-muted-foreground">
+          Location data: <a href="https://www.geonames.org/" className="hover:text-foreground" target="_blank" rel="noopener noreferrer">GeoNames</a>
+          {' · '}<a href="https://www.openstreetmap.org/copyright" className="hover:text-foreground" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a>
+          {' · '}<a href="https://geocoding.geo.census.gov/" className="hover:text-foreground" target="_blank" rel="noopener noreferrer">US Census</a>
+        </p>
       </div>
     </footer>
   );

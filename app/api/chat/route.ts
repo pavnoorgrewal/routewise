@@ -9,13 +9,14 @@ import {
   validateUIMessages,
 } from 'ai'
 import { z } from 'zod'
+import { google } from '@ai-sdk/google'
 import { openai } from '@ai-sdk/openai'
 
 export const maxDuration = 60
 
 const PLANNING_ERROR = 'Trip planning is temporarily unavailable. Please try again.'
 const LOCAL_SETUP_ERROR =
-  'AI trip planning is not configured. Add OPENAI_API_KEY to .env.local (or your Vercel environment variables), then restart and retry.'
+  'AI trip planning is not configured. Add a free Gemini API key as GOOGLE_GENERATIVE_AI_API_KEY in .env.local (or your Vercel environment variables), then restart and retry.'
 
 // ─── Tool Definitions ────────────────────────────────────────────────────────
 
@@ -169,6 +170,7 @@ const SYSTEM_PROMPT = `You are Routewise, a friendly and knowledgeable AI road t
 - This product is exclusively for EV trip planning. NEVER mention gas stations, fuel stops, gas breaks, gasoline, or anything related to internal combustion engines. The "fuel" category in our tools means EV charging.
 - When suggesting stops along the route, plan around EV charging needs (typical EV range 200-300 miles between charges).
 - You do not have access to live maps, road closures, charger status, or reservation systems. State that routes, drive times, and charging suggestions are estimates. Never claim a charger is available, operational, or compatible without verified data.
+- If the traveler provides a street address or named business for the start or destination, preserve that full location in showRouteSummary so the map opens at the intended place, rather than reducing it to a city name.
 - Do not invent exact charger port counts, power ratings, or real-time availability. Use null for unknown fields and invite the traveler to verify the route and charger details before departure.
 - After collecting the user's preferences, IMMEDIATELY produce the final Route Summary. Do NOT ask the user to confirm the plan first. The user will follow up with changes if they want adjustments.
 
@@ -240,6 +242,7 @@ export async function POST(req: Request) {
   }
 
   if (
+    !process.env.GOOGLE_GENERATIVE_AI_API_KEY?.trim() &&
     !process.env.OPENAI_API_KEY?.trim() &&
     !process.env.VERCEL &&
     !process.env.AI_GATEWAY_API_KEY?.trim() &&
@@ -250,9 +253,11 @@ export async function POST(req: Request) {
 
   try {
     const result = streamText({
-      model: process.env.OPENAI_API_KEY?.trim()
-        ? openai('gpt-5.4-mini')
-        : 'openai/gpt-5.4-mini',
+      model: process.env.GOOGLE_GENERATIVE_AI_API_KEY?.trim()
+        ? google('gemini-3.1-flash-lite')
+        : process.env.OPENAI_API_KEY?.trim()
+          ? openai('gpt-5.4-mini')
+          : 'openai/gpt-5.4-mini',
       system: SYSTEM_PROMPT,
       messages: modelMessages,
       tools,
