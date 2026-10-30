@@ -254,7 +254,7 @@ export async function POST(req: Request) {
   try {
     const result = streamText({
       model: process.env.GOOGLE_GENERATIVE_AI_API_KEY?.trim()
-        ? google('gemini-2.5-flash')
+        ? google('gemini-3.1-flash-lite')
         : process.env.OPENAI_API_KEY?.trim()
           ? openai('gpt-5.4-mini')
           : 'openai/gpt-5.4-mini',

@@ -42,8 +42,8 @@ original `routewise.rehmatsg.com` deployment is independent of this copy.
 
 ## AI trip planning
 
-The `/api/chat` endpoint prefers Google's `gemini-2.5-flash` through the direct
-Gemini API when `GOOGLE_GENERATIVE_AI_API_KEY` is set. Gemini 2.5 Flash has a
+The `/api/chat` endpoint prefers Google's `gemini-3.1-flash-lite` through the direct
+Gemini API when `GOOGLE_GENERATIVE_AI_API_KEY` is set. Gemini 3.1 Flash-Lite has a
 free tier with rate limits; check [Google's current pricing](https://ai.google.dev/gemini-api/docs/pricing)
 and [your quota in AI Studio](https://aistudio.google.com/usage). Google says
 free-tier content may be used to improve its products, so avoid entering
