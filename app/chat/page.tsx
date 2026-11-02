@@ -40,6 +40,12 @@ function getMessageText(message: UIMessage): string {
   )
 }
 
+function displayAssistantText(text: string): string {
+  return text
+    .replace(/(^|\n)[ \t]{0,3}#{1,6}[ \t]*/g, '$1')
+    .replace(/\*\*/g, '')
+}
+
 function answerPartOrder(part: NonNullable<UIMessage['parts']>[number]) {
   if (part.type === 'text') return 0
   if (part.type === 'tool-showRouteSummary') return 2
@@ -413,7 +419,7 @@ function ChatPageInner() {
                               className="text-sm leading-relaxed text-foreground prose prose-sm max-w-none prose-p:my-1 prose-headings:mt-3 prose-headings:mb-1"
                             >
                               <span className="whitespace-pre-wrap">
-                                {part.text}
+                                {displayAssistantText(part.text)}
                               </span>
                             </div>
                           )

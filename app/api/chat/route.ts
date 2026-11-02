@@ -1,5 +1,7 @@
 import {
   convertToModelMessages,
+  createUIMessageStream,
+  createUIMessageStreamResponse,
   InferUITools,
   stepCountIs,
   streamText,
@@ -17,6 +19,36 @@ export const maxDuration = 60
 const PLANNING_ERROR = 'Trip planning is temporarily unavailable. Please try again.'
 const LOCAL_SETUP_ERROR =
   'AI trip planning is not configured. Add a free Gemini API key as GOOGLE_GENERATIVE_AI_API_KEY in .env.local (or your Vercel environment variables), then restart and retry.'
+const EV_RANGE_QUESTION = 'About how many miles can your EV travel on a full charge? An estimate is fine.'
+
+function getUserText(message: ChatMessage): string {
+  return message.parts
+    .filter((part): part is Extract<ChatMessage['parts'][number], { type: 'text' }> => part.type === 'text')
+    .map((part) => part.text)
+    .join(' ')
+}
+
+function getEvRangeMiles(messages: ChatMessage[]): number | null {
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index]
+    if (message.role !== 'user') continue
+    const text = getUserText(message)
+    const explicit =
+      text.match(/\b(?:ev|car|vehicle|battery)?\s*(?:full[- ]charge\s+)?range\s*(?:is|of|:|about|around|up to)?\s*(\d{2,3})\s*(?:miles?|mi)?\b/i) ??
+      text.match(/\b(?:full charge|per charge|on a charge|on one charge)\s*(?:is|of|:|about|around|up to|gets me)?\s*(\d{2,3})\s*(?:miles?|mi)?\b/i) ??
+      text.match(/\b(\d{2,3})[\s-]*(?:miles?|mi)\s*(?:of\s+)?(?:range|per charge|on (?:a |one |full |a full )?charge)\b/i)
+    if (explicit) return Number(explicit[1])
+
+    const previousAssistant = messages.slice(0, index).reverse().find((part) => part.role === 'assistant')
+    if (previousAssistant?.parts.some((part) => part.type === 'text' && part.text.includes(EV_RANGE_QUESTION))) {
+      const directAnswer =
+        text.match(/^\s*(?:about|around|roughly|approximately)?\s*(\d{2,3})\s*(?:miles?|mi)?\s*[.!]?\s*$/i) ??
+        text.match(/\b(\d{2,3})\s*(?:miles?|mi)\b/i)
+      if (directAnswer) return Number(directAnswer[1])
+    }
+  }
+  return null
+}
 
 // ─── Tool Definitions ────────────────────────────────────────────────────────
 
@@ -170,7 +202,8 @@ const SYSTEM_PROMPT = `You are Routewise, a friendly and knowledgeable AI road t
 
 ## CRITICAL RULES
 - This product is exclusively for EV trip planning. NEVER mention gas stations, fuel stops, gas breaks, gasoline, or anything related to internal combustion engines. The "fuel" category in our tools means EV charging.
-- When suggesting stops along the route, plan around EV charging needs (typical EV range 200-300 miles between charges).
+- Before planning any route, ask how many miles the traveler's EV can travel on a full charge if they have not already supplied it. Never assume a generic EV range. Use their stated range to decide whether an en-route charging stop is needed.
+- Plan charging legs conservatively: allow a reserve and account for weather, terrain, and highway speed. If the starting battery level is unknown, clearly state the starting-charge assumption. Never promise that a leg is safely reachable from the rated range alone.
 - You do not have access to live maps, road closures, charger status, or reservation systems. State that routes, drive times, and charging suggestions are estimates. Never claim a charger is available, operational, or compatible without verified data.
 - If the traveler provides a street address or named business for the start or destination, preserve that full location in showRouteSummary so the map opens at the intended place, rather than reducing it to a city name.
 - Do not invent exact charger port counts, power ratings, or real-time availability. Use null for unknown fields and invite the traveler to verify the route and charger details before departure.
@@ -180,12 +213,13 @@ const SYSTEM_PROMPT = `You are Routewise, a friendly and knowledgeable AI road t
 - After collecting the user's preferences, IMMEDIATELY produce the final Route Summary. Do NOT ask the user to confirm the plan first. The user will follow up with changes if they want adjustments.
 
 ## Conversation Flow
-1. Greet briefly and identify the trip (origin and destination).
-2. If multiple viable routes exist, use showRouteOptions to let the user choose one.
-3. Ask only for important missing preferences using askMultipleChoice (one at a time): trip pace, dining style, scenic vs. fast, etc. If the traveler already supplied enough detail, go straight to the itinerary.
-4. Optionally use showSuggestedStops with multiSelect: true to gather stop-type preferences.
-5. Once you have the route and preferences, write the detailed leg-by-leg itinerary in plain text. Then call showRouteStops for the named places and showChargingStations for needed charging stops.
-6. Briefly invite changes, then call showRouteSummary LAST with every planned stop in driving order. The Google Maps link in that card must be the last part of your answer. Do not write more text or call more tools afterward.
+1. Confirm the traveler's full-charge EV range in miles before planning. The server asks for it when missing; never create a route, route options, or stops before they answer.
+2. Greet briefly and identify the trip (origin and destination).
+3. If multiple viable routes exist, use showRouteOptions to let the user choose one.
+4. Ask only for important missing preferences using askMultipleChoice (one at a time): trip pace, dining style, scenic vs. fast, etc. If the traveler already supplied enough detail, go straight to the itinerary.
+5. Optionally use showSuggestedStops with multiSelect: true to gather stop-type preferences.
+6. Once you have the route and preferences, write the detailed leg-by-leg itinerary in plain text. Then call showRouteStops for the named places and showChargingStations only when charging is needed for the stated range.
+7. Briefly invite changes, then call showRouteSummary LAST with every planned stop in driving order. The Google Maps link in that card must be the last part of your answer. Do not write more text or call more tools afterward.
 
 ## Tool Usage Guidelines
 
@@ -211,7 +245,7 @@ The "final plan" view with origin → every planned stop → destination timelin
 - Be conversational, warm, and enthusiastic.
 - Be specific — use real place names, real charging networks, and real cities.
 - Always include drive times between stops so the user can plan breaks.
-- Keep preference questions brief, but make the final itinerary detailed enough to follow each leg and understand every planned stop. Use plain text lines rather than Markdown headings or tables so the current chat layout renders cleanly.
+- Keep preference questions brief, but make the final itinerary detailed enough to follow each leg and understand every planned stop. Write plain text only. Never output Markdown markers, including # headings, ** bold, * emphasis, or tables; the chat displays text literally.
 - Never say "gas", "fuel up", "fill up the tank", etc. Use "charge", "top up", "Supercharger stop".
 `
 
@@ -239,6 +273,18 @@ export async function POST(req: Request) {
     return new Response('Bad Request', { status: 400 })
   }
 
+  const evRangeMiles = getEvRangeMiles(messages)
+  if (evRangeMiles === null) {
+    const stream = createUIMessageStream<ChatMessage>({
+      execute: ({ writer }) => {
+        writer.write({ type: 'text-start', id: 'ev-range-question' })
+        writer.write({ type: 'text-delta', id: 'ev-range-question', delta: EV_RANGE_QUESTION })
+        writer.write({ type: 'text-end', id: 'ev-range-question' })
+      },
+    })
+    return createUIMessageStreamResponse({ stream })
+  }
+
   let modelMessages: Awaited<ReturnType<typeof convertToModelMessages>>
   try {
     modelMessages = await convertToModelMessages(messages)
@@ -263,7 +309,7 @@ export async function POST(req: Request) {
         : process.env.OPENAI_API_KEY?.trim()
           ? openai('gpt-5.4-mini')
           : 'openai/gpt-5.4-mini',
-      system: SYSTEM_PROMPT,
+      system: `${SYSTEM_PROMPT}\n\nThe traveler stated an EV full-charge range of ${evRangeMiles} miles. Use this range when planning charging stops and explain your starting-charge and reserve assumptions.`,
       messages: modelMessages,
       tools,
       stopWhen: stepCountIs(15),
