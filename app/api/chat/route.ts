@@ -44,7 +44,7 @@ const askMultipleChoiceTool = tool({
 
 const showRouteStopsTool = tool({
   description:
-    'Display a list of specific stops along the route as visual cards. Use this to suggest individual places like restaurants, coffee shops, gas stations, scenic viewpoints, attractions, or any specific place of interest along the route. Each stop shows an icon, name, location, and optional description.',
+    'Display the named restaurants, parks, scenic overlooks, and other places the traveler will visit as visual cards. Include only stops on the chosen itinerary, with a specific name, location, and reason to visit.',
   inputSchema: z.object({
     stops: z.array(
       z.object({
@@ -53,15 +53,16 @@ const showRouteStopsTool = tool({
         category: z
           .enum(['food', 'coffee', 'fuel', 'attraction', 'lodging', 'shopping', 'scenic', 'entertainment', 'default'])
           .describe('Category for the stop icon'),
-        description: z.string().nullable().describe('Optional short description of why this stop is recommended'),
+        description: z.string().nullable().optional().describe('Optional short description of why this stop is recommended'),
       })
     ).min(1).max(8),
   }),
+  execute: async () => ({ displayed: true }),
 })
 
 const showRouteSummaryTool = tool({
   description:
-    'Display a full route summary as a visual timeline. Use this when the user has finalized or is close to finalizing their trip plan, or whenever you have enough info to show the full journey. Shows origin, destination, intermediate stops, total distance, duration, and ETA.',
+    'Display the completed itinerary as a visual timeline and generate its Google Maps directions link. Include every planned charging, dining, park, and scenic stop in driving order, with a specific place name and location. Call this after the detailed route text and other stop cards so the map link ends the answer.',
   inputSchema: z.object({
     origin: z.string().describe('Starting location (e.g. "San Francisco, CA")'),
     destination: z.string().describe('End destination (e.g. "Los Angeles, CA")'),
@@ -71,15 +72,15 @@ const showRouteSummaryTool = tool({
         location: z.string().describe('City or address'),
         category: z
           .enum(['food', 'coffee', 'fuel', 'attraction', 'lodging', 'shopping', 'scenic', 'entertainment', 'default'])
-          .nullable(),
-        durationFromPrev: z.string().nullable().describe('Drive time from the previous stop (e.g. "1h 20min")'),
+          .nullable().optional(),
+        durationFromPrev: z.string().nullable().optional().describe('Drive time from the previous stop (e.g. "1h 20min")'),
       })
-    ).describe('Intermediate stops in order'),
-    totalDistance: z.string().nullable().describe('Total distance (e.g. "381 miles")'),
-    totalDuration: z.string().nullable().describe('Total drive time (e.g. "5h 45min")'),
-    approximateEta: z.string().nullable().describe('Estimated arrival time (e.g. "3:30 PM")'),
-    vehicleModel: z.string().nullable().describe('EV model if known (e.g. "Tesla Model 3", "Rivian R1T")'),
-    routeTag: z.string().nullable().describe('Short route descriptor badge (e.g. "Fastest Route", "Scenic Route", "EV-Optimized")'),
+    ).max(9).describe('Every planned intermediate stop in driving order, up to nine for one Google Maps directions link'),
+    totalDistance: z.string().nullable().optional().describe('Total distance (e.g. "381 miles")'),
+    totalDuration: z.string().nullable().optional().describe('Total drive time (e.g. "5h 45min")'),
+    approximateEta: z.string().nullable().optional().describe('Estimated arrival time (e.g. "3:30 PM")'),
+    vehicleModel: z.string().nullable().optional().describe('EV model if known (e.g. "Tesla Model 3", "Rivian R1T")'),
+    routeTag: z.string().nullable().optional().describe('Short route descriptor badge (e.g. "Fastest Route", "Scenic Route", "EV-Optimized")'),
   }),
 })
 
@@ -92,10 +93,10 @@ const showSuggestedStopsTool = tool({
       z.object({
         id: z.string().describe('Unique identifier'),
         label: z.string().describe('Chip display text'),
-        sublabel: z.string().nullable().describe('Optional extra info shown on the chip'),
+        sublabel: z.string().nullable().optional().describe('Optional extra info shown on the chip'),
         category: z
           .enum(['food', 'coffee', 'fuel', 'attraction', 'lodging', 'shopping', 'scenic', 'entertainment', 'default'])
-          .nullable(),
+          .nullable().optional(),
       })
     ).min(2).max(10),
     multiSelect: z.boolean().describe('Whether the user can select multiple chips'),
@@ -110,22 +111,23 @@ const showSuggestedStopsTool = tool({
 
 const showChargingStationsTool = tool({
   description:
-    'Display EV charging stations along the route. Use this when the user mentions they are driving an electric vehicle, asks about charging, or when planning a long-distance EV trip.',
+    'Display the specific candidate EV charging stops on the chosen route, in driving order. Name the station and network only when reasonably confident they exist; otherwise name the charging area and leave unknown details null. Do not claim live availability.',
   inputSchema: z.object({
-    title: z.string().nullable().describe('Optional section title'),
+    title: z.string().nullable().optional().describe('Optional section title'),
     stations: z.array(
       z.object({
         name: z.string().describe('Station name (e.g. "Tesla Supercharger - Santa Barbara")'),
         location: z.string().describe('Address or city'),
-        network: z.string().nullable().describe('Charging network (e.g. "Tesla", "Electrify America", "ChargePoint")'),
-        ports: z.number().int().nullable().describe('Number of charging ports'),
-        maxKw: z.number().nullable().describe('Maximum charging speed in kW'),
-        distanceFromRoute: z.string().nullable().describe('How far off the main route (e.g. "0.3 mi off route")'),
-        estimatedChargingTime: z.string().nullable().describe('Estimated time to charge (e.g. "20-30 min")'),
-        amenitiesNearby: z.array(z.string()).nullable().describe('Nearby amenities (e.g. ["Starbucks", "Whole Foods"])'),
+        network: z.string().nullable().optional().describe('Charging network (e.g. "Tesla", "Electrify America", "ChargePoint")'),
+        ports: z.number().int().nullable().optional().describe('Number of charging ports'),
+        maxKw: z.number().nullable().optional().describe('Maximum charging speed in kW'),
+        distanceFromRoute: z.string().nullable().optional().describe('How far off the main route (e.g. "0.3 mi off route")'),
+        estimatedChargingTime: z.string().nullable().optional().describe('Estimated time to charge (e.g. "20-30 min")'),
+        amenitiesNearby: z.array(z.string()).nullable().optional().describe('Nearby amenities (e.g. ["Starbucks", "Whole Foods"])'),
       })
     ).min(1).max(6),
   }),
+  execute: async () => ({ displayed: true }),
 })
 
 const showRouteOptionsTool = tool({
@@ -172,15 +174,18 @@ const SYSTEM_PROMPT = `You are Routewise, a friendly and knowledgeable AI road t
 - You do not have access to live maps, road closures, charger status, or reservation systems. State that routes, drive times, and charging suggestions are estimates. Never claim a charger is available, operational, or compatible without verified data.
 - If the traveler provides a street address or named business for the start or destination, preserve that full location in showRouteSummary so the map opens at the intended place, rather than reducing it to a city name.
 - Do not invent exact charger port counts, power ratings, or real-time availability. Use null for unknown fields and invite the traveler to verify the route and charger details before departure.
+- Give the traveler a COMPLETE, DETAILED itinerary in plain text before the visual cards: the chosen highways/roads, each leg in driving order with approximate distance and driving time, where and why to charge (including an estimated charging break only if the vehicle and charge assumptions support it), and the specific names and locations of restaurants, parks, scenic overlooks, or other places they will visit. Explain what they will do at each stop. Distinguish drive time from time spent charging or visiting. If no en-route charge is needed, say so and explain the starting-charge assumption.
+- Include only places you are reasonably confident exist. Never fabricate a restaurant, park, charger, address, or precise schedule. Mark uncertain charging locations as candidate areas and ask the traveler to confirm them before departure. If the vehicle, starting state of charge, departure time, or connector is unknown, state the assumption instead of making up a precise charging duration or ETA.
+- The final route summary must include EVERY stop the itinerary actually plans to visit, in exactly the same order as the detailed text and charging/place cards. Use the specific place name plus a location or address, not just a city. Keep the complete itinerary to at most nine intermediate stops so one Google Maps directions link can include them all. Treat extra suggestions as optional alternatives, not part of the mapped route.
 - After collecting the user's preferences, IMMEDIATELY produce the final Route Summary. Do NOT ask the user to confirm the plan first. The user will follow up with changes if they want adjustments.
 
 ## Conversation Flow
 1. Greet briefly and identify the trip (origin and destination).
 2. If multiple viable routes exist, use showRouteOptions to let the user choose one.
-3. Ask 2-4 quick preference questions using askMultipleChoice (one at a time): trip pace, dining style, scenic vs. fast, etc.
+3. Ask only for important missing preferences using askMultipleChoice (one at a time): trip pace, dining style, scenic vs. fast, etc. If the traveler already supplied enough detail, go straight to the itinerary.
 4. Optionally use showSuggestedStops with multiSelect: true to gather stop-type preferences.
-5. Once you have route + preferences, IMMEDIATELY call showRouteSummary with the full itinerary. Also call showChargingStations to show planned charging stops.
-6. Briefly invite the user to ask for changes (one short sentence). Do NOT ask "does this look good?" — just present the plan.
+5. Once you have the route and preferences, write the detailed leg-by-leg itinerary in plain text. Then call showRouteStops for the named places and showChargingStations for needed charging stops.
+6. Briefly invite changes, then call showRouteSummary LAST with every planned stop in driving order. The Google Maps link in that card must be the last part of your answer. Do not write more text or call more tools afterward.
 
 ## Tool Usage Guidelines
 
@@ -194,19 +199,19 @@ Use to let the user pick categories or types of stops (e.g. coffee, scenic overl
 Use when there are 2+ viable route alternatives (e.g. coastal vs. inland, PCH vs. I-5). Offer route options early in the planning so the user can choose direction. Include distance, EV-aware drive time, highlights, and tags (scenic, fast, eco, popular).
 
 ### showRouteStops
-Use to display a curated list of specific recommended stops (real restaurants, cafes, viewpoints, attractions) once the route is established. Show 3-6 stops at a time. NEVER use this for gas/fuel — use showChargingStations for charging.
+Use to display the specific restaurants, parks, viewpoints, and attractions actually included in the chosen itinerary. Give each a useful description and location. NEVER use this for charging — use showChargingStations for charging.
 
 ### showChargingStations
-Use proactively for any trip over ~150 miles. Show 2-4 candidate charging areas along the route. Include a network or specific station only when reasonably confident it exists. Set unknown kW speeds, port counts, and amenities to null. The traveler must verify locations, compatibility, and availability before driving.
+Use proactively when the trip may exceed the vehicle's comfortable range. Give the station name, network, and location for each planned charging stop when reasonably confident they exist. Otherwise give a clearly labeled candidate charging area. Set unknown kW speeds, port counts, charging time, and amenities to null. The traveler must verify locations, connector compatibility, and availability before driving. Do not add an unnecessary charging stop to a short trip.
 
 ### showRouteSummary
-The "final plan" view with origin → stops → destination timeline. Call this AFTER preferences are collected — do not wait for confirmation. Include: origin, destination, intermediate stops (mix of charging stops and points of interest), totalDistance, totalDuration, approximateEta. If the user has mentioned their EV model, pass it as vehicleModel. Always pass a routeTag (e.g. "Fastest Route", "Scenic Route", "EV-Optimized"). For charging stops, use category 'fuel' (which renders as Charging in the UI).
+The "final plan" view with origin → every planned stop → destination timeline and Google Maps directions link. Call this LAST, after the detailed text and other cards — do not wait for confirmation. Include all planned charging stops and points of interest, in driving order, with specific names and locations. Use no more than nine intermediate stops. Do not substitute a city center for a named place. Give totalDistance and totalDuration as estimates, and use null for approximateEta unless a departure time is known. If the user has mentioned their EV model, pass it as vehicleModel. Always pass a routeTag (e.g. "Fastest Route", "Scenic Route", "EV-Optimized"). For charging stops, use category 'fuel' (which renders as Charging in the UI).
 
 ## Style Tips
 - Be conversational, warm, and enthusiastic.
 - Be specific — use real place names, real charging networks, and real cities.
 - Always include drive times between stops so the user can plan breaks.
-- Keep text responses SHORT. The visual components do the heavy lifting.
+- Keep preference questions brief, but make the final itinerary detailed enough to follow each leg and understand every planned stop. Use plain text lines rather than Markdown headings or tables so the current chat layout renders cleanly.
 - Never say "gas", "fuel up", "fill up the tank", etc. Use "charge", "top up", "Supercharger stop".
 `
 

@@ -40,6 +40,12 @@ function getMessageText(message: UIMessage): string {
   )
 }
 
+function answerPartOrder(part: NonNullable<UIMessage['parts']>[number]) {
+  if (part.type === 'text') return 0
+  if (part.type === 'tool-showRouteSummary') return 2
+  return 1
+}
+
 // ─── Tool Part Renderer ───────────────────────────────────────────────────────
 
 function ToolPartRenderer({
@@ -396,33 +402,36 @@ function ChatPageInner() {
                   </div>
                 ) : (
                   <div className="w-full flex flex-col gap-3">
-                    {message.parts?.map((part, partIndex) => {
-                      if (part.type === 'text') {
-                        return (
-                          <div
-                            key={partIndex}
-                            className="text-sm leading-relaxed text-foreground prose prose-sm max-w-none prose-p:my-1 prose-headings:mt-3 prose-headings:mb-1"
-                          >
-                            <span className="whitespace-pre-wrap">
-                              {part.text}
-                            </span>
-                          </div>
-                        )
-                      }
+                    {message.parts
+                      ?.map((part, partIndex) => ({ part, partIndex }))
+                      .sort((a, b) => answerPartOrder(a.part) - answerPartOrder(b.part))
+                      .map(({ part, partIndex }) => {
+                        if (part.type === 'text') {
+                          return (
+                            <div
+                              key={partIndex}
+                              className="text-sm leading-relaxed text-foreground prose prose-sm max-w-none prose-p:my-1 prose-headings:mt-3 prose-headings:mb-1"
+                            >
+                              <span className="whitespace-pre-wrap">
+                                {part.text}
+                              </span>
+                            </div>
+                          )
+                        }
 
-                      // Render all tool parts via the shared renderer
-                      if (part.type.startsWith('tool-')) {
-                        return (
-                          <ToolPartRenderer
-                            key={partIndex}
-                            part={part as NonNullable<ChatMessage['parts']>[number]}
-                            addToolOutput={addToolOutput}
-                          />
-                        )
-                      }
+                        // Keep the existing card components; put the route summary and map last.
+                        if (part.type.startsWith('tool-')) {
+                          return (
+                            <ToolPartRenderer
+                              key={partIndex}
+                              part={part as NonNullable<ChatMessage['parts']>[number]}
+                              addToolOutput={addToolOutput}
+                            />
+                          )
+                        }
 
-                      return null
-                    })}
+                        return null
+                      })}
 
                     {/* Streaming indicator */}
                     {isStreaming && (
