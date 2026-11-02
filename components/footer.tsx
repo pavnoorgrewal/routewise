@@ -1,30 +1,60 @@
-import { Route } from "lucide-react";
 import Link from "next/link";
+import { ArrowUpRight } from "lucide-react";
+import { Brand } from "@/components/brand";
 
 export function Footer() {
   return (
-    <footer className="border-t border-border bg-background">
-      <div className="mx-auto max-w-6xl px-6 py-12 md:py-16">
-        <div className="flex flex-col gap-8 sm:flex-row sm:items-start sm:justify-between">
+    <footer className="border-t border-border">
+      <div className="mx-auto max-w-7xl px-5 pb-24 pt-12 md:px-10 md:pt-16">
+        <div className="flex flex-col justify-between gap-8 sm:flex-row">
           <div>
-            <Link href="/" className="inline-flex items-center gap-2.5 rounded-md text-lg font-semibold tracking-tight">
-              <Route aria-hidden="true" className="h-5 w-5" />
-              Routewise
-            </Link>
-            <p className="mt-3 max-w-xs text-sm leading-relaxed text-muted-foreground">Less planning. More of the journey.</p>
+            <Brand />
+            <p className="mt-4 text-sm text-muted-foreground">
+              A little planning. A lot of possibility.
+            </p>
           </div>
-          <nav aria-label="Footer navigation" className="flex flex-wrap items-center gap-x-8 gap-y-4 text-sm">
-            <Link href="/proposal" className="text-muted-foreground transition-colors hover:text-foreground">The Story</Link>
+          <nav aria-label="Footer navigation">
+            <Link
+              href="/proposal"
+              className="group flex w-fit items-center gap-5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+            >
+              The Story{" "}
+              <ArrowUpRight className="h-3.5 w-3.5 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
+            </Link>
           </nav>
         </div>
-        <div className="mt-10 flex flex-col gap-3 border-t border-border/70 pt-6 text-xs text-muted-foreground sm:flex-row sm:justify-between">
+        <div className="mt-12 flex flex-col justify-between gap-3 border-t border-border pt-6 text-[11px] text-muted-foreground sm:flex-row">
           <p>© {new Date().getFullYear()} Routewise.</p>
           <p>Founded by Pavnoor Singh Grewal</p>
         </div>
-        <p className="mt-3 text-[11px] text-muted-foreground">
-          Location data: <a href="https://www.geonames.org/" className="hover:text-foreground" target="_blank" rel="noopener noreferrer">GeoNames</a>
-          {' · '}<a href="https://www.openstreetmap.org/copyright" className="hover:text-foreground" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a>
-          {' · '}<a href="https://geocoding.geo.census.gov/" className="hover:text-foreground" target="_blank" rel="noopener noreferrer">US Census</a>
+        <p className="mt-4 max-w-lg text-[10px] leading-5 text-muted-foreground">
+          Location data:{" "}
+          <a
+            href="https://www.geonames.org/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-foreground"
+          >
+            GeoNames
+          </a>{" "}
+          ·{" "}
+          <a
+            href="https://www.openstreetmap.org/copyright"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-foreground"
+          >
+            © OpenStreetMap contributors
+          </a>{" "}
+          ·{" "}
+          <a
+            href="https://geocoding.geo.census.gov/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-foreground"
+          >
+            US Census
+          </a>
         </p>
       </div>
     </footer>

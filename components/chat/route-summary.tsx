@@ -1,27 +1,27 @@
-'use client'
+"use client";
 
-import { Zap } from 'lucide-react'
-import { RouteStopCategory } from './route-stop'
-import { RouteMap } from './route-map'
-import { RouteTimeline } from './route-timeline'
+import { Zap } from "lucide-react";
+import { RouteStopCategory } from "./route-stop";
+import { RouteMap } from "./route-map";
+import { RouteTimeline } from "./route-timeline";
 
 export interface RouteSummaryStop {
-  name: string
-  location: string
-  category?: RouteStopCategory | null
-  durationFromPrev?: string | null
+  name: string;
+  location: string;
+  category?: RouteStopCategory | null;
+  durationFromPrev?: string | null;
 }
 
 export interface RouteSummaryProps {
-  origin: string
-  destination: string
-  stops?: RouteSummaryStop[]
-  totalDistance?: string | null
-  totalDuration?: string | null
-  approximateEta?: string | null
-  vehicleModel?: string | null
-  routeTag?: string | null
-  state?: 'input-streaming' | 'input-available' | 'output-available'
+  origin: string;
+  destination: string;
+  stops?: RouteSummaryStop[];
+  totalDistance?: string | null;
+  totalDuration?: string | null;
+  approximateEta?: string | null;
+  vehicleModel?: string | null;
+  routeTag?: string | null;
+  state?: "input-streaming" | "input-available" | "output-available";
 }
 
 export function RouteSummary({
@@ -31,10 +31,10 @@ export function RouteSummary({
   totalDistance,
   totalDuration,
   vehicleModel,
-  routeTag = 'Fastest Route',
-  state = 'input-available',
+  routeTag = "Fastest Route",
+  state = "input-available",
 }: RouteSummaryProps) {
-  if (state === 'input-streaming') {
+  if (state === "input-streaming") {
     return (
       <div className="rounded-2xl border border-border bg-card w-full animate-pulse p-6 flex flex-col gap-4">
         <div className="flex justify-between items-start">
@@ -50,28 +50,26 @@ export function RouteSummary({
           <div className="h-12 bg-muted rounded-xl" />
         </div>
       </div>
-    )
+    );
   }
 
-  const tripLabel = `${origin} to ${destination}`
+  const tripLabel = `${origin} to ${destination}`;
 
   return (
     <div className="rounded-2xl border border-border bg-card w-full shadow-sm overflow-hidden">
-      <div className="p-6 flex flex-col gap-5">
-
+      <div className="p-6 sm:p-7 flex flex-col gap-5">
         {/* Top row: EV icon + route tag badge */}
         <div className="flex items-start justify-between">
           {/* Circular EV icon */}
           <div className="relative">
-            <div className="h-14 w-14 rounded-full bg-muted flex items-center justify-center border border-border">
-              <Zap className="h-6 w-6 text-foreground" strokeWidth={2.5} />
+            <div className="h-12 w-12 rounded-2xl bg-[#f8e9df] flex items-center justify-center border border-[#b94f2a]/10">
+              <Zap className="h-5 w-5 text-brand" strokeWidth={1.8} />
             </div>
-
           </div>
 
           {/* Route tag */}
           {routeTag && (
-            <span className="inline-flex items-center rounded-full bg-green-100 dark:bg-green-900 px-3 py-1 text-xs font-semibold text-green-700 dark:text-green-300 border border-green-200 dark:border-green-800">
+            <span className="inline-flex items-center rounded-full bg-[#ecefe7] px-3 py-1 text-xs font-semibold text-[#46603d] border border-[#78936b]/20">
               {routeTag}
             </span>
           )}
@@ -79,7 +77,10 @@ export function RouteSummary({
 
         {/* Title + subtitle */}
         <div>
-          <h2 className="text-xl font-bold text-foreground leading-tight text-balance">
+          <p className="mb-2 text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
+            Your journey, at a glance
+          </p>
+          <h2 className="text-2xl font-medium tracking-[-0.035em] text-foreground leading-tight text-balance">
             {tripLabel}
           </h2>
           {vehicleModel && (
@@ -89,7 +90,11 @@ export function RouteSummary({
           )}
         </div>
 
-        <RouteTimeline origin={origin} destination={destination} stops={stops} />
+        <RouteTimeline
+          origin={origin}
+          destination={destination}
+          stops={stops}
+        />
 
         {/* Stats row */}
         {(totalDistance || totalDuration || stops.length > 0) && (
@@ -100,25 +105,29 @@ export function RouteSummary({
             {totalDuration && (
               <StatBlock value={totalDuration} label="Total Travel Time" />
             )}
-            <StatBlock value={`${stops.length} Stop${stops.length !== 1 ? 's' : ''}`} label="Scheduled" />
+            <StatBlock
+              value={`${stops.length} Stop${stops.length !== 1 ? "s" : ""}`}
+              label="Scheduled"
+            />
           </div>
         )}
-
-
-
       </div>
       {origin && destination && (
         <RouteMap origin={origin} destination={destination} stops={stops} />
       )}
     </div>
-  )
+  );
 }
 
 function StatBlock({ value, label }: { value: string; label: string }) {
   return (
     <div className="flex flex-col items-center justify-center rounded-xl bg-muted/50 border border-border px-3 py-3 gap-0.5 text-center">
-      <span className="text-base font-bold text-foreground leading-tight">{value}</span>
-      <span className="text-[10px] text-muted-foreground leading-tight">{label}</span>
+      <span className="text-base font-semibold text-foreground leading-tight">
+        {value}
+      </span>
+      <span className="text-[10px] text-muted-foreground leading-tight">
+        {label}
+      </span>
     </div>
-  )
+  );
 }

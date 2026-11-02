@@ -1,13 +1,19 @@
-import React from "react"
+import React from "react";
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Newsreader } from "next/font/google";
-import { Analytics } from '@vercel/analytics/next';
+import { Analytics } from "@vercel/analytics/next";
 
 import "./globals.css";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist" });
-const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono" });
-const newsreader = Newsreader({ subsets: ["latin"], variable: "--font-newsreader" });
+const geistMono = Geist_Mono({
+  subsets: ["latin"],
+  variable: "--font-geist-mono",
+});
+const newsreader = Newsreader({
+  subsets: ["latin"],
+  variable: "--font-newsreader",
+});
 
 export const metadata: Metadata = {
   title: "Routewise - AI-Powered Road Trip Planner",
@@ -16,7 +22,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#f7f7f7",
+  themeColor: "#f9f8f5",
 };
 
 export default function RootLayout({
