@@ -20,6 +20,18 @@ const PLANNING_ERROR = 'Trip planning is temporarily unavailable. Please try aga
 const LOCAL_SETUP_ERROR =
   'AI trip planning is not configured. Add a free Gemini API key as GOOGLE_GENERATIVE_AI_API_KEY in .env.local (or your Vercel environment variables), then restart and retry.'
 const EV_RANGE_QUESTION = 'About how many miles can your EV travel on a full charge? An estimate is fine.'
+const UNKNOWN_RANGE_QUESTION = "No problem. What EV model and year do you drive? If you don't know, reply 'range 150 miles' to use a cautious planning estimate."
+
+function textResponse(message: string): Response {
+  const stream = createUIMessageStream<ChatMessage>({
+    execute: ({ writer }) => {
+      writer.write({ type: 'text-start', id: 'reply' })
+      writer.write({ type: 'text-delta', id: 'reply', delta: message })
+      writer.write({ type: 'text-end', id: 'reply' })
+    },
+  })
+  return createUIMessageStreamResponse({ stream })
+}
 
 function getUserText(message: ChatMessage): string {
   return message.parts
@@ -40,14 +52,55 @@ function getEvRangeMiles(messages: ChatMessage[]): number | null {
     if (explicit) return Number(explicit[1])
 
     const previousAssistant = messages.slice(0, index).reverse().find((part) => part.role === 'assistant')
-    if (previousAssistant?.parts.some((part) => part.type === 'text' && part.text.includes(EV_RANGE_QUESTION))) {
+    if (previousAssistant?.parts.some((part) => part.type === 'text' &&
+      (part.text.includes(EV_RANGE_QUESTION) || part.text.includes(UNKNOWN_RANGE_QUESTION)))) {
       const directAnswer =
         text.match(/^\s*(?:about|around|roughly|approximately)?\s*(\d{2,3})\s*(?:miles?|mi)?\s*[.!]?\s*$/i) ??
         text.match(/\b(\d{2,3})\s*(?:miles?|mi)\b/i)
       if (directAnswer) return Number(directAnswer[1])
     }
+
+    if (/^\s*(?:yes|sure|ok(?:ay)?|sounds good|that works|use that|go ahead)\b/i.test(text) && previousAssistant) {
+      const offeredRange = previousAssistant.parts
+        .filter((part): part is Extract<ChatMessage['parts'][number], { type: 'text' }> => part.type === 'text')
+        .map((part) => part.text)
+        .join(' ')
+        .match(/\b(?:use|assume|baseline)\b.{0,60}?\b(\d{2,3})[ -]*(?:miles?|mi)\b/i)
+      if (offeredRange) return Number(offeredRange[1])
+    }
   }
   return null
+}
+
+function isTripRequest(text: string): boolean {
+  return /\b(?:trip|road[ -]?trip|route|plan(?:ning)?|drive|driving|travel)\b/i.test(text) ||
+    /\b(?:go|going)\s+(?:from|to)\b/i.test(text) ||
+    /\bfrom\b[\s\S]{0,120}\bto\b/i.test(text)
+}
+
+function modelHistory(messages: ChatMessage[]): ChatMessage[] {
+  return messages.slice(-24).map((message) => ({
+    ...message,
+    parts: message.parts.flatMap((part) => {
+      if (part.type === 'tool-showRouteSummary' && part.state === 'input-available') {
+        const route = part.input
+        const stops = route.stops.map((stop) => `${stop.name} (${stop.location})`).join(' → ')
+        const summary = `Completed trip plan: ${route.origin} → ${stops ? `${stops} → ` : ''}${route.destination}. ` +
+          `Estimated distance: ${route.totalDistance ?? 'unknown'}. Estimated drive time: ${route.totalDuration ?? 'unknown'}.`
+        return [{ type: 'text' as const, text: summary }]
+      }
+      if (part.type === 'tool-showRouteOptions' && part.state === 'input-available') {
+        return [{ type: 'text' as const, text: `I asked: ${part.input.question} Options: ${part.input.options.map((option) => option.name).join(', ')}.` }]
+      }
+      if (part.type === 'tool-askMultipleChoice' && part.state === 'input-available') {
+        return [{ type: 'text' as const, text: `I asked: ${part.input.question} Options: ${part.input.options.map((option) => option.label).join(', ')}.` }]
+      }
+      if (part.type === 'tool-showSuggestedStops' && part.state === 'input-available') {
+        return [{ type: 'text' as const, text: `I offered optional stops: ${part.input.chips.map((chip) => chip.label).join(', ')}. The traveler can also choose no extra stops.` }]
+      }
+      return [part]
+    }),
+  }))
 }
 
 // ─── Tool Definitions ────────────────────────────────────────────────────────
@@ -203,6 +256,8 @@ const SYSTEM_PROMPT = `You are Routewise, a friendly and knowledgeable AI road t
 ## CRITICAL RULES
 - This product is exclusively for EV trip planning. NEVER mention gas stations, fuel stops, gas breaks, gasoline, or anything related to internal combustion engines. The "fuel" category in our tools means EV charging.
 - Before planning any route, ask how many miles the traveler's EV can travel on a full charge if they have not already supplied it. Never assume a generic EV range. Use their stated range to decide whether an en-route charging stop is needed.
+- Respond naturally to greetings and casual questions. For a greeting without a trip request, answer briefly and ask where they would like to go; do not mention EV range yet. If they do not know their range when planning, ask for their EV model. If they also do not know the model, offer an explicit conservative planning estimate and wait for their acceptance. Never silently invent an EV range.
+- After a completed itinerary, treat the next user message as a follow-up. Answer questions about the existing route directly. If they request changes, revise the relevant part and update the route summary; if they request a new trip, plan it using the known EV range unless they changed vehicles. Do not restart the entire questionnaire or repeat the full itinerary for a small question.
 - Plan charging legs conservatively: allow a reserve and account for weather, terrain, and highway speed. If the starting battery level is unknown, clearly state the starting-charge assumption. Never promise that a leg is safely reachable from the rated range alone.
 - You do not have access to live maps, road closures, charger status, or reservation systems. State that routes, drive times, and charging suggestions are estimates. Never claim a charger is available, operational, or compatible without verified data.
 - If the traveler provides a street address or named business for the start or destination, preserve that full location in showRouteSummary so the map opens at the intended place, rather than reducing it to a city name.
@@ -215,8 +270,8 @@ const SYSTEM_PROMPT = `You are Routewise, a friendly and knowledgeable AI road t
 - After collecting the user's preferences, produce the itinerary, supporting cards, and final Route Summary in one answer. Do NOT ask the user to confirm the plan first. The user will follow up with changes if they want adjustments.
 
 ## Conversation Flow
-1. Confirm the traveler's full-charge EV range in miles before planning. The server asks for it when missing; never create a route, route options, or stops before they answer.
-2. Greet briefly and identify the trip (origin and destination).
+1. Greet briefly and identify the trip (origin and destination). A casual greeting alone is not a trip request.
+2. Confirm the traveler's full-charge EV range in miles before planning. The server asks for it when a trip request is made without a range; never create a route, route options, or stops before they answer or explain they do not know it.
 3. If multiple viable routes exist, use showRouteOptions to let the user choose one.
 4. Ask only for important missing preferences using askMultipleChoice (one at a time): trip pace, dining style, scenic vs. fast, etc. If the traveler already supplied enough detail, go straight to the itinerary.
 5. Optionally use showSuggestedStops with multiSelect: true to gather stop-type preferences. The traveler can choose no extra stops; accept that choice and continue directly to the itinerary.
@@ -258,7 +313,7 @@ export async function POST(req: Request) {
   let body: unknown
   try {
     const raw = await req.text()
-    if (raw.length > 64_000) return new Response('Request too large', { status: 413 })
+    if (raw.length > 128_000) return new Response('Request too large', { status: 413 })
     body = JSON.parse(raw)
   } catch {
     return new Response('Bad Request', { status: 400 })
@@ -267,7 +322,7 @@ export async function POST(req: Request) {
   let messages: ChatMessage[]
   try {
     const submitted = (body as { messages?: ChatMessage[] }).messages
-    if (!Array.isArray(submitted) || submitted.length < 1 || submitted.length > 40) {
+    if (!Array.isArray(submitted) || submitted.length < 1 || submitted.length > 80) {
       return new Response('Bad Request', { status: 400 })
     }
     messages = await validateUIMessages<ChatMessage>({
@@ -279,20 +334,21 @@ export async function POST(req: Request) {
   }
 
   const evRangeMiles = getEvRangeMiles(messages)
-  if (evRangeMiles === null) {
-    const stream = createUIMessageStream<ChatMessage>({
-      execute: ({ writer }) => {
-        writer.write({ type: 'text-start', id: 'ev-range-question' })
-        writer.write({ type: 'text-delta', id: 'ev-range-question', delta: EV_RANGE_QUESTION })
-        writer.write({ type: 'text-end', id: 'ev-range-question' })
-      },
-    })
-    return createUIMessageStreamResponse({ stream })
+  const latestUser = [...messages].reverse().find((message) => message.role === 'user')
+  const latestUserText = latestUser ? getUserText(latestUser) : ''
+  const lastAssistant = [...messages].reverse().find((message) => message.role === 'assistant')
+  const answeringRangeQuestion = lastAssistant?.parts.some((part) => part.type === 'text' &&
+    (part.text.includes(EV_RANGE_QUESTION) || part.text.includes(UNKNOWN_RANGE_QUESTION))) ?? false
+  if (evRangeMiles === null && answeringRangeQuestion && /\b(?:do(?:n't| not) know|not sure|unsure|no idea)\b/i.test(latestUserText)) {
+    return textResponse(UNKNOWN_RANGE_QUESTION)
+  }
+  if (evRangeMiles === null && !answeringRangeQuestion && isTripRequest(latestUserText)) {
+    return textResponse(EV_RANGE_QUESTION)
   }
 
   let modelMessages: Awaited<ReturnType<typeof convertToModelMessages>>
   try {
-    modelMessages = await convertToModelMessages(messages)
+    modelMessages = await convertToModelMessages(modelHistory(messages), { ignoreIncompleteToolCalls: true })
   } catch {
     return new Response(PLANNING_ERROR, { status: 500 })
   }
@@ -314,7 +370,9 @@ export async function POST(req: Request) {
         : process.env.OPENAI_API_KEY?.trim()
           ? openai('gpt-5.4-mini')
           : 'openai/gpt-5.4-mini',
-      system: `${SYSTEM_PROMPT}\n\nThe traveler stated an EV full-charge range of ${evRangeMiles} miles. Use this range when planning charging stops and explain your starting-charge and reserve assumptions.`,
+      system: evRangeMiles === null
+        ? `${SYSTEM_PROMPT}\n\nThe traveler has not given an EV range yet. ${answeringRangeQuestion ? 'They are responding to your range question. If they supplied an EV model and year, give a clearly labeled approximate range and ask them to confirm it before planning. Otherwise ask for their EV model; do not repeat the same range question, invent a precise range, or plan the route yet.' : 'Their latest message is not a trip request. Respond conversationally and do not mention EV range yet. You may ask where they would like to go.'} Do not generate a route until a numeric range is known or the traveler explicitly accepts a stated planning estimate.`
+        : `${SYSTEM_PROMPT}\n\nThe traveler stated an EV full-charge range of ${evRangeMiles} miles. Use this range when planning charging stops and explain your starting-charge and reserve assumptions.`,
       messages: modelMessages,
       tools,
       stopWhen: stepCountIs(15),
