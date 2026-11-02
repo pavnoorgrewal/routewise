@@ -416,7 +416,7 @@ function ChatPageInner() {
                           return (
                             <div
                               key={partIndex}
-                              className="text-sm leading-relaxed text-foreground prose prose-sm max-w-none prose-p:my-1 prose-headings:mt-3 prose-headings:mb-1"
+                              className="max-w-[70ch] text-[15px] leading-7 text-foreground"
                             >
                               <span className="whitespace-pre-wrap">
                                 {displayAssistantText(part.text)}
