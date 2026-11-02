@@ -1,9 +1,9 @@
 'use client'
 
-import { Zap, Coffee, Utensils, Bed, ShoppingBag, Star, TreePine, Music, MapPin } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { Zap } from 'lucide-react'
 import { RouteStopCategory } from './route-stop'
 import { RouteMap } from './route-map'
+import { RouteTimeline } from './route-timeline'
 
 export interface RouteSummaryStop {
   name: string
@@ -23,57 +23,6 @@ export interface RouteSummaryProps {
   routeTag?: string | null
   state?: 'input-streaming' | 'input-available' | 'output-available'
 }
-
-const stopCategoryConfig: Partial<
-  Record<RouteStopCategory, { icon: React.ReactNode; bg: string; border: string }>
-> = {
-  food: {
-    icon: <Utensils className="h-4 w-4" />,
-    bg: 'bg-orange-50 dark:bg-orange-950',
-    border: 'border-orange-200 dark:border-orange-800',
-  },
-  coffee: {
-    icon: <Coffee className="h-4 w-4" />,
-    bg: 'bg-amber-50 dark:bg-amber-950',
-    border: 'border-amber-200 dark:border-amber-800',
-  },
-  fuel: {
-    icon: <Zap className="h-4 w-4" />,
-    bg: 'bg-yellow-50 dark:bg-yellow-950',
-    border: 'border-yellow-200 dark:border-yellow-800',
-  },
-  attraction: {
-    icon: <Star className="h-4 w-4" />,
-    bg: 'bg-purple-50 dark:bg-purple-950',
-    border: 'border-purple-200 dark:border-purple-800',
-  },
-  lodging: {
-    icon: <Bed className="h-4 w-4" />,
-    bg: 'bg-blue-50 dark:bg-blue-950',
-    border: 'border-blue-200 dark:border-blue-800',
-  },
-  shopping: {
-    icon: <ShoppingBag className="h-4 w-4" />,
-    bg: 'bg-pink-50 dark:bg-pink-950',
-    border: 'border-pink-200 dark:border-pink-800',
-  },
-  scenic: {
-    icon: <TreePine className="h-4 w-4" />,
-    bg: 'bg-green-50 dark:bg-green-950',
-    border: 'border-green-200 dark:border-green-800',
-  },
-  entertainment: {
-    icon: <Music className="h-4 w-4" />,
-    bg: 'bg-indigo-50 dark:bg-indigo-950',
-    border: 'border-indigo-200 dark:border-indigo-800',
-  },
-  default: {
-    icon: <MapPin className="h-4 w-4" />,
-    bg: 'bg-muted',
-    border: 'border-border',
-  },
-}
-
 
 export function RouteSummary({
   origin,
@@ -103,12 +52,6 @@ export function RouteSummary({
       </div>
     )
   }
-
-  // Build the horizontal route bar nodes: origin dot, stop icons, destination dot
-  const stopNodes = stops.map((stop) => {
-    const config = stopCategoryConfig[stop.category ?? 'default'] ?? stopCategoryConfig.default!
-    return config
-  })
 
   const tripLabel = `${origin} to ${destination}`
 
@@ -146,52 +89,7 @@ export function RouteSummary({
           )}
         </div>
 
-        {/* Horizontal route bar */}
-        <div className="flex flex-col gap-1.5">
-          {/* Origin / Destination labels */}
-          <div className="flex justify-between text-xs text-muted-foreground">
-            <span>{origin}</span>
-            <span>{destination}</span>
-          </div>
-
-          {/* Bar with stop icons */}
-          <div className="relative flex items-center gap-0">
-            {/* Full-width track */}
-            <div className="absolute inset-y-1/2 left-0 right-0 h-[3px] -translate-y-1/2 rounded-full overflow-hidden">
-              {/* Green filled portion */}
-              <div className="h-full w-1/3 bg-green-500 rounded-l-full" />
-            </div>
-            {/* Track remainder */}
-            <div className="absolute inset-y-1/2 left-1/3 right-0 h-[3px] -translate-y-1/2 bg-border rounded-r-full" />
-
-            {/* Origin dot */}
-            <div className="relative z-10 h-3 w-3 rounded-full bg-foreground shrink-0" />
-
-            {/* Stop icons evenly spaced */}
-            {stopNodes.length > 0 && (
-              <div className="flex-1 flex items-center justify-evenly px-2 relative z-10">
-                {stopNodes.map((config, i) => (
-                  <div
-                    key={i}
-                    className={cn(
-                      'h-8 w-8 rounded-full border flex items-center justify-center text-foreground shrink-0',
-                      config.bg,
-                      config.border
-                    )}
-                  >
-                    {config.icon}
-                  </div>
-                ))}
-              </div>
-            )}
-            {stopNodes.length === 0 && <div className="flex-1" />}
-
-            {/* Destination dot */}
-            <div className="relative z-10 h-3 w-3 rounded-full bg-foreground shrink-0" />
-          </div>
-
-
-        </div>
+        <RouteTimeline origin={origin} destination={destination} stops={stops} />
 
         {/* Stats row */}
         {(totalDistance || totalDuration || stops.length > 0) && (
