@@ -1,5 +1,7 @@
 import {
   convertToModelMessages,
+  createUIMessageStream,
+  createUIMessageStreamResponse,
   InferUITools,
   stepCountIs,
   streamText,
@@ -17,6 +19,36 @@ export const maxDuration = 60
 const PLANNING_ERROR = 'Trip planning is temporarily unavailable. Please try again.'
 const LOCAL_SETUP_ERROR =
   'AI trip planning is not configured. Add a free Gemini API key as GOOGLE_GENERATIVE_AI_API_KEY in .env.local (or your Vercel environment variables), then restart and retry.'
+const EV_RANGE_QUESTION = 'About how many miles can your EV travel on a full charge? An estimate is fine.'
+
+function getUserText(message: ChatMessage): string {
+  return message.parts
+    .filter((part): part is Extract<ChatMessage['parts'][number], { type: 'text' }> => part.type === 'text')
+    .map((part) => part.text)
+    .join(' ')
+}
+
+function getEvRangeMiles(messages: ChatMessage[]): number | null {
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index]
+    if (message.role !== 'user') continue
+    const text = getUserText(message)
+    const explicit =
+      text.match(/\b(?:ev|car|vehicle|battery)?\s*(?:full[- ]charge\s+)?range\s*(?:is|of|:|about|around|up to)?\s*(\d{2,3})\s*(?:miles?|mi)?\b/i) ??
+      text.match(/\b(?:full charge|per charge|on a charge|on one charge)\s*(?:is|of|:|about|around|up to|gets me)?\s*(\d{2,3})\s*(?:miles?|mi)?\b/i) ??
+      text.match(/\b(\d{2,3})[\s-]*(?:miles?|mi)\s*(?:of\s+)?(?:range|per charge|on (?:a |one |full |a full )?charge)\b/i)
+    if (explicit) return Number(explicit[1])
+
+    const previousAssistant = messages.slice(0, index).reverse().find((part) => part.role === 'assistant')
+    if (previousAssistant?.parts.some((part) => part.type === 'text' && part.text.includes(EV_RANGE_QUESTION))) {
+      const directAnswer =
+        text.match(/^\s*(?:about|around|roughly|approximately)?\s*(\d{2,3})\s*(?:miles?|mi)?\s*[.!]?\s*$/i) ??
+        text.match(/\b(\d{2,3})\s*(?:miles?|mi)\b/i)
+      if (directAnswer) return Number(directAnswer[1])
+    }
+  }
+  return null
+}
 
 // ─── Tool Definitions ────────────────────────────────────────────────────────
 
@@ -106,7 +138,7 @@ const showSuggestedStopsTool = tool({
       id: z.string(),
       label: z.string(),
     })
-  ).describe('The chips selected by the user'),
+  ).describe('The chips selected by the user. An empty array means the user wants no optional stops.'),
 })
 
 const showChargingStationsTool = tool({
@@ -170,30 +202,34 @@ const SYSTEM_PROMPT = `You are Routewise, a friendly and knowledgeable AI road t
 
 ## CRITICAL RULES
 - This product is exclusively for EV trip planning. NEVER mention gas stations, fuel stops, gas breaks, gasoline, or anything related to internal combustion engines. The "fuel" category in our tools means EV charging.
-- When suggesting stops along the route, plan around EV charging needs (typical EV range 200-300 miles between charges).
+- Before planning any route, ask how many miles the traveler's EV can travel on a full charge if they have not already supplied it. Never assume a generic EV range. Use their stated range to decide whether an en-route charging stop is needed.
+- Plan charging legs conservatively: allow a reserve and account for weather, terrain, and highway speed. If the starting battery level is unknown, clearly state the starting-charge assumption. Never promise that a leg is safely reachable from the rated range alone.
 - You do not have access to live maps, road closures, charger status, or reservation systems. State that routes, drive times, and charging suggestions are estimates. Never claim a charger is available, operational, or compatible without verified data.
 - If the traveler provides a street address or named business for the start or destination, preserve that full location in showRouteSummary so the map opens at the intended place, rather than reducing it to a city name.
 - Do not invent exact charger port counts, power ratings, or real-time availability. Use null for unknown fields and invite the traveler to verify the route and charger details before departure.
-- Give the traveler a COMPLETE, DETAILED itinerary in plain text before the visual cards: the chosen highways/roads, each leg in driving order with approximate distance and driving time, where and why to charge (including an estimated charging break only if the vehicle and charge assumptions support it), and the specific names and locations of restaurants, parks, scenic overlooks, or other places they will visit. Explain what they will do at each stop. Distinguish drive time from time spent charging or visiting. If no en-route charge is needed, say so and explain the starting-charge assumption.
+- Give the traveler a complete itinerary in plain text before the visual cards: the chosen highways/roads, each leg in driving order with approximate distance and driving time, where and why to charge (including an estimated charging break only if the vehicle and charge assumptions support it), and the specific names and locations of restaurants, parks, scenic overlooks, or other places they will visit. Explain what they will do at each stop. Distinguish drive time from time spent charging or visiting. If no en-route charge is needed, say so and explain the starting-charge assumption. Be concise: the cards will carry supporting details, so do not repeat their descriptions in long prose.
 - Include only places you are reasonably confident exist. Never fabricate a restaurant, park, charger, address, or precise schedule. Mark uncertain charging locations as candidate areas and ask the traveler to confirm them before departure. If the vehicle, starting state of charge, departure time, or connector is unknown, state the assumption instead of making up a precise charging duration or ETA.
 - The final route summary must include EVERY stop the itinerary actually plans to visit, in exactly the same order as the detailed text and charging/place cards. Use the specific place name plus a location or address, not just a city. Keep the complete itinerary to at most nine intermediate stops so one Google Maps directions link can include them all. Treat extra suggestions as optional alternatives, not part of the mapped route.
-- After collecting the user's preferences, IMMEDIATELY produce the final Route Summary. Do NOT ask the user to confirm the plan first. The user will follow up with changes if they want adjustments.
+- Restaurants, parks, scenic overlooks, and other sightseeing stops are optional. If the traveler chooses "No extra stops" or skips stop suggestions, do not add optional stops anyway. Include only charging stops actually needed for their EV range; a trip can have zero intermediate stops. Do not call showRouteStops when there are no optional places to show.
+- Even when there are zero intermediate stops, write a short plain-text route explanation with the chosen road, estimated distance and drive time, and whether charging is needed BEFORE calling showRouteSummary. Never send a route-summary card by itself as the whole final answer.
+- After collecting the user's preferences, produce the itinerary, supporting cards, and final Route Summary in one answer. Do NOT ask the user to confirm the plan first. The user will follow up with changes if they want adjustments.
 
 ## Conversation Flow
-1. Greet briefly and identify the trip (origin and destination).
-2. If multiple viable routes exist, use showRouteOptions to let the user choose one.
-3. Ask only for important missing preferences using askMultipleChoice (one at a time): trip pace, dining style, scenic vs. fast, etc. If the traveler already supplied enough detail, go straight to the itinerary.
-4. Optionally use showSuggestedStops with multiSelect: true to gather stop-type preferences.
-5. Once you have the route and preferences, write the detailed leg-by-leg itinerary in plain text. Then call showRouteStops for the named places and showChargingStations for needed charging stops.
-6. Briefly invite changes, then call showRouteSummary LAST with every planned stop in driving order. The Google Maps link in that card must be the last part of your answer. Do not write more text or call more tools afterward.
+1. Confirm the traveler's full-charge EV range in miles before planning. The server asks for it when missing; never create a route, route options, or stops before they answer.
+2. Greet briefly and identify the trip (origin and destination).
+3. If multiple viable routes exist, use showRouteOptions to let the user choose one.
+4. Ask only for important missing preferences using askMultipleChoice (one at a time): trip pace, dining style, scenic vs. fast, etc. If the traveler already supplied enough detail, go straight to the itinerary.
+5. Optionally use showSuggestedStops with multiSelect: true to gather stop-type preferences. The traveler can choose no extra stops; accept that choice and continue directly to the itinerary.
+6. Once you have the route and preferences, write a short overview followed by the leg-by-leg itinerary in plain text. Then call showRouteStops for the named places and showChargingStations only when charging is needed for the stated range.
+7. Call showRouteSummary LAST with every planned stop in driving order. The Google Maps link in that card must be the last part of your answer. Do not write more text or call more tools afterward.
 
 ## Tool Usage Guidelines
 
 ### askMultipleChoice
-Use to collect structured preferences. ALWAYS provide 4 options when possible (they render in a 2-column grid). Examples: trip pace (Relaxed / Moderate / Fast / Flexible), dining style (Local gems / Fine dining / Quick bites / Roadside classics), scenic preference, time of departure. Limit to one question at a time.
+Use to collect structured preferences. ALWAYS provide 4 options when possible (they render in a 2-column grid). Examples: trip pace (Relaxed / Moderate / Fast / Flexible), dining style (Local gems / Fine dining / Quick bites / Roadside classics), scenic preference, time of departure. Limit to one question at a time. For any optional stop question, include a "No extra stops" option.
 
 ### showSuggestedStops
-Use to let the user pick categories or types of stops (e.g. coffee, scenic overlooks, local diners, national parks, viewpoints, photo spots). ALWAYS pass multiSelect: true unless there is a clear reason for single-select — users want to pick multiple stop types. Provide 5-8 chips with diverse categories.
+Use to let the user pick categories or types of stops (e.g. coffee, scenic overlooks, local diners, national parks, viewpoints, photo spots). ALWAYS pass multiSelect: true unless there is a clear reason for single-select — users want to pick multiple stop types. Provide 5-8 chips with diverse categories. An empty selection means no extra stops; do not ask again or insert any optional stops.
 
 ### showRouteOptions
 Use when there are 2+ viable route alternatives (e.g. coastal vs. inland, PCH vs. I-5). Offer route options early in the planning so the user can choose direction. Include distance, EV-aware drive time, highlights, and tags (scenic, fast, eco, popular).
@@ -211,7 +247,10 @@ The "final plan" view with origin → every planned stop → destination timelin
 - Be conversational, warm, and enthusiastic.
 - Be specific — use real place names, real charging networks, and real cities.
 - Always include drive times between stops so the user can plan breaks.
-- Keep preference questions brief, but make the final itinerary detailed enough to follow each leg and understand every planned stop. Use plain text lines rather than Markdown headings or tables so the current chat layout renders cleanly.
+- Keep preference questions to one short sentence, without a long introduction.
+- Make the final answer easy to skim. Start with one short line covering the route, estimated drive time, and number of charging stops. Add a blank line, then give each driving leg its own short numbered paragraph in travel order. For each leg, include the road, approximate miles and drive time, and the named stop plus what the traveler will do there. Keep each leg to one or two short sentences. Put the starting-charge assumption and any charger verification note in one brief closing line only if they were not already covered in the overview or legs. Use blank lines between paragraphs.
+- Scale detail to the trip: a short trip should take only a few short paragraphs; a long trip can use more legs, but avoid repetition, filler, long disclaimers, and lists of optional places. Include the important planning details once, then let the stop and charging cards show the supporting information.
+- Write plain text only. Never output Markdown markers, including # headings, ** bold, * emphasis, or tables; the chat displays text literally.
 - Never say "gas", "fuel up", "fill up the tank", etc. Use "charge", "top up", "Supercharger stop".
 `
 
@@ -239,6 +278,18 @@ export async function POST(req: Request) {
     return new Response('Bad Request', { status: 400 })
   }
 
+  const evRangeMiles = getEvRangeMiles(messages)
+  if (evRangeMiles === null) {
+    const stream = createUIMessageStream<ChatMessage>({
+      execute: ({ writer }) => {
+        writer.write({ type: 'text-start', id: 'ev-range-question' })
+        writer.write({ type: 'text-delta', id: 'ev-range-question', delta: EV_RANGE_QUESTION })
+        writer.write({ type: 'text-end', id: 'ev-range-question' })
+      },
+    })
+    return createUIMessageStreamResponse({ stream })
+  }
+
   let modelMessages: Awaited<ReturnType<typeof convertToModelMessages>>
   try {
     modelMessages = await convertToModelMessages(messages)
@@ -263,7 +314,7 @@ export async function POST(req: Request) {
         : process.env.OPENAI_API_KEY?.trim()
           ? openai('gpt-5.4-mini')
           : 'openai/gpt-5.4-mini',
-      system: SYSTEM_PROMPT,
+      system: `${SYSTEM_PROMPT}\n\nThe traveler stated an EV full-charge range of ${evRangeMiles} miles. Use this range when planning charging stops and explain your starting-charge and reserve assumptions.`,
       messages: modelMessages,
       tools,
       stopWhen: stepCountIs(15),

@@ -34,10 +34,15 @@ export function MultipleChoice({
   onSelect,
 }: MultipleChoiceProps) {
   const isSelectable = state === 'input-available'
-  const selectedOption = options.find((o) => o.id === selectedId)
+  const isOptionalStopsQuestion = /\bstops?\b/i.test(question) && !/\bcharg(?:e|ing|er)\b/i.test(question)
+  const hasSkipOption = options.some((option) => /\b(?:no|none|skip|without|straight through)\b/i.test(option.label))
+  const visibleOptions = isOptionalStopsQuestion && !hasSkipOption
+    ? [...options, { id: 'no_extra_stops', label: 'No extra stops' }]
+    : options
+  const selectedOption = visibleOptions.find((o) => o.id === selectedId)
 
   if (state === 'output-available' && selectedOption) {
-    const selectedIdx = options.indexOf(selectedOption)
+    const selectedIdx = visibleOptions.indexOf(selectedOption)
     const accent = optionAccents[selectedIdx % optionAccents.length]
     return (
       <div className="flex flex-col gap-1.5 max-w-md">
@@ -61,7 +66,7 @@ export function MultipleChoice({
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-2">
-          {options.map((option, idx) => {
+          {visibleOptions.map((option, idx) => {
             const isSelected = option.id === selectedId
             const accent = optionAccents[idx % optionAccents.length]
             return (

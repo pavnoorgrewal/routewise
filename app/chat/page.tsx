@@ -40,10 +40,10 @@ function getMessageText(message: UIMessage): string {
   )
 }
 
-function answerPartOrder(part: NonNullable<UIMessage['parts']>[number]) {
-  if (part.type === 'text') return 0
-  if (part.type === 'tool-showRouteSummary') return 2
-  return 1
+function displayAssistantText(text: string): string {
+  return text
+    .replace(/(^|\n)[ \t]{0,3}#{1,6}[ \t]*/g, '$1')
+    .replace(/\*\*/g, '')
 }
 
 // ─── Tool Part Renderer ───────────────────────────────────────────────────────
@@ -404,22 +404,21 @@ function ChatPageInner() {
                   <div className="w-full flex flex-col gap-3">
                     {message.parts
                       ?.map((part, partIndex) => ({ part, partIndex }))
-                      .sort((a, b) => answerPartOrder(a.part) - answerPartOrder(b.part))
                       .map(({ part, partIndex }) => {
                         if (part.type === 'text') {
                           return (
                             <div
                               key={partIndex}
-                              className="text-sm leading-relaxed text-foreground prose prose-sm max-w-none prose-p:my-1 prose-headings:mt-3 prose-headings:mb-1"
+                              className="max-w-[70ch] text-[15px] leading-7 text-foreground"
                             >
                               <span className="whitespace-pre-wrap">
-                                {part.text}
+                                {displayAssistantText(part.text)}
                               </span>
                             </div>
                           )
                         }
 
-                        // Keep the existing card components; put the route summary and map last.
+                        // Preserve the order in which the AI sent text and cards.
                         if (part.type.startsWith('tool-')) {
                           return (
                             <ToolPartRenderer
