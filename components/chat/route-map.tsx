@@ -1,38 +1,41 @@
-import { ExternalLink, Map } from 'lucide-react'
+import { ExternalLink, Map } from "lucide-react";
 
 type RouteMapProps = {
-  origin: string
-  destination: string
-  stops: Array<{ name: string; location: string }>
-}
+  origin: string;
+  destination: string;
+  stops: Array<{ name: string; location: string }>;
+};
 
 export function RouteMap({ origin, destination, stops }: RouteMapProps) {
   const waypoints = stops
     .map((stop) => {
-      const name = stop.name?.trim()
-      const location = stop.location?.trim()
-      if (!name) return location
-      if (!location || location.toLowerCase().includes(name.toLowerCase())) return location || name
-      return `${name}, ${location}`
+      const name = stop.name?.trim();
+      const location = stop.location?.trim();
+      if (!name) return location;
+      if (!location || location.toLowerCase().includes(name.toLowerCase()))
+        return location || name;
+      return `${name}, ${location}`;
     })
-    .filter(Boolean)
+    .filter(Boolean);
 
   const directions = new URLSearchParams({
-    api: '1',
+    api: "1",
     origin,
     destination,
-    travelmode: 'driving',
-  })
-  if (waypoints.length) directions.set('waypoints', waypoints.slice(0, 9).join('|'))
+    travelmode: "driving",
+  });
+  if (waypoints.length)
+    directions.set("waypoints", waypoints.slice(0, 9).join("|"));
 
-  const embedKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_EMBED_KEY?.trim()
+  const embedKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_EMBED_KEY?.trim();
   const embed = new URLSearchParams({
-    key: embedKey ?? '',
+    key: embedKey ?? "",
     origin,
     destination,
-    mode: 'driving',
-  })
-  if (waypoints.length) embed.set('waypoints', waypoints.slice(0, 20).join('|'))
+    mode: "driving",
+  });
+  if (waypoints.length)
+    embed.set("waypoints", waypoints.slice(0, 20).join("|"));
 
   return (
     <div className="border-t border-border bg-secondary/20 p-6">
@@ -53,7 +56,8 @@ export function RouteMap({ origin, destination, stops }: RouteMapProps) {
         />
       ) : (
         <p className="text-sm text-muted-foreground">
-          Open the route in Google Maps to check directions, driving time, and stops.
+          Open the route in Google Maps to check directions, driving time, and
+          stops.
         </p>
       )}
       <p className="mt-3 text-xs text-muted-foreground">
@@ -63,11 +67,11 @@ export function RouteMap({ origin, destination, stops }: RouteMapProps) {
         href={`https://www.google.com/maps/dir/?${directions.toString()}`}
         target="_blank"
         rel="noopener noreferrer"
-        className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-foreground underline underline-offset-4 hover:no-underline"
+        className="button-dark mt-5 inline-flex items-center gap-2 px-4 py-3 text-xs font-medium"
       >
         Open full route in Google Maps
         <ExternalLink aria-hidden="true" className="h-3.5 w-3.5" />
       </a>
     </div>
-  )
+  );
 }
