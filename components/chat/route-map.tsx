@@ -8,7 +8,13 @@ type RouteMapProps = {
 
 export function RouteMap({ origin, destination, stops }: RouteMapProps) {
   const waypoints = stops
-    .map((stop) => stop.location?.trim() || stop.name?.trim())
+    .map((stop) => {
+      const name = stop.name?.trim()
+      const location = stop.location?.trim()
+      if (!name) return location
+      if (!location || location.toLowerCase().includes(name.toLowerCase())) return location || name
+      return `${name}, ${location}`
+    })
     .filter(Boolean)
 
   const directions = new URLSearchParams({
@@ -35,15 +41,6 @@ export function RouteMap({ origin, destination, stops }: RouteMapProps) {
           <Map aria-hidden="true" className="h-4 w-4" />
           Route map
         </h3>
-        <a
-          href={`https://www.google.com/maps/dir/?${directions.toString()}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 text-sm font-medium text-foreground underline underline-offset-4 hover:no-underline"
-        >
-          Open in Google Maps
-          <ExternalLink aria-hidden="true" className="h-3.5 w-3.5" />
-        </a>
       </div>
       {embedKey ? (
         <iframe
@@ -62,6 +59,15 @@ export function RouteMap({ origin, destination, stops }: RouteMapProps) {
       <p className="mt-3 text-xs text-muted-foreground">
         Check charging locations and availability before you drive.
       </p>
+      <a
+        href={`https://www.google.com/maps/dir/?${directions.toString()}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-foreground underline underline-offset-4 hover:no-underline"
+      >
+        Open full route in Google Maps
+        <ExternalLink aria-hidden="true" className="h-3.5 w-3.5" />
+      </a>
     </div>
   )
 }
