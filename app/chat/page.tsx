@@ -46,12 +46,6 @@ function displayAssistantText(text: string): string {
     .replace(/\*\*/g, '')
 }
 
-function answerPartOrder(part: NonNullable<UIMessage['parts']>[number]) {
-  if (part.type === 'text') return 0
-  if (part.type === 'tool-showRouteSummary') return 2
-  return 1
-}
-
 // ─── Tool Part Renderer ───────────────────────────────────────────────────────
 
 function ToolPartRenderer({
@@ -410,7 +404,6 @@ function ChatPageInner() {
                   <div className="w-full flex flex-col gap-3">
                     {message.parts
                       ?.map((part, partIndex) => ({ part, partIndex }))
-                      .sort((a, b) => answerPartOrder(a.part) - answerPartOrder(b.part))
                       .map(({ part, partIndex }) => {
                         if (part.type === 'text') {
                           return (
@@ -425,7 +418,7 @@ function ChatPageInner() {
                           )
                         }
 
-                        // Keep the existing card components; put the route summary and map last.
+                        // Preserve the order in which the AI sent text and cards.
                         if (part.type.startsWith('tool-')) {
                           return (
                             <ToolPartRenderer

@@ -75,6 +75,12 @@ export function SuggestedStops({
     onSelect?.(chips.filter((c) => internalSelected.includes(c.id)))
   }
 
+  const skip = () => {
+    if (!isSelectable) return
+    setInternalSelected([])
+    onSelect?.([])
+  }
+
   if (state === 'input-streaming') {
     return (
       <div className="flex flex-col gap-2 max-w-lg">
@@ -110,6 +116,15 @@ export function SuggestedStops({
             )
           })}
         </div>
+      </div>
+    )
+  }
+
+  if (isCommitted) {
+    return (
+      <div className="flex flex-col gap-1.5">
+        <p className="text-xs font-medium text-muted-foreground">{title}</p>
+        <p className="text-sm text-muted-foreground">No extra stops selected</p>
       </div>
     )
   }
@@ -165,6 +180,15 @@ export function SuggestedStops({
           </button>
           <p className="text-xs text-muted-foreground">Pick as many as you like</p>
         </div>
+      )}
+      {isSelectable && (
+        <button
+          type="button"
+          onClick={skip}
+          className="self-start text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+        >
+          No extra stops
+        </button>
       )}
     </div>
   )
