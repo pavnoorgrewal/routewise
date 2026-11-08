@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ArrowUpRight } from "lucide-react";
 import { Brand } from "@/components/brand";
 
 export function Navbar() {
@@ -21,13 +20,6 @@ export function Navbar() {
             className="nav-story text-xs font-medium text-muted-foreground transition-colors hover:text-foreground sm:text-sm"
           >
             The Story
-          </Link>
-          <Link
-            href="/chat"
-            className="button-dark hidden items-center gap-2 px-4 py-2 text-xs sm:inline-flex"
-          >
-            Plan a trip{" "}
-            <ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />
           </Link>
         </div>
       </nav>

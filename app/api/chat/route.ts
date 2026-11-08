@@ -13,6 +13,8 @@ import {
 import { z } from 'zod'
 import { google } from '@ai-sdk/google'
 import { openai } from '@ai-sdk/openai'
+import { searchPlaces } from '@/lib/place-search'
+import locations from '@/data/us-locations.json'
 
 export const maxDuration = 60
 
@@ -105,6 +107,57 @@ function modelHistory(messages: ChatMessage[]): ChatMessage[] {
 
 // ─── Tool Definitions ────────────────────────────────────────────────────────
 
+const verifiedAddresses = new Map<string, number>()
+const cityNames = locations.filter((location) => location.type === 'city')
+  .sort((a, b) => b.name.length - a.name.length)
+
+function cityInQuery(query: string) {
+  const normalized = ` ${query.toLowerCase().replace(/[^a-z0-9]+/g, ' ')} `
+  return cityNames.find((city) =>
+    normalized.includes(` ${city.name.toLowerCase()} `) &&
+    normalized.includes(` ${city.state.toLowerCase()} `))
+    ?? cityNames.find((city) => normalized.includes(` ${city.name.toLowerCase()} `))
+}
+
+function placeKey(name: string, address: string) {
+  return `${name} ${address}`.normalize('NFKD').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+}
+
+function wasVerified(name: string, address: string) {
+  const timestamp = verifiedAddresses.get(placeKey(name, address))
+  return timestamp !== undefined && timestamp > Date.now() - 24 * 60 * 60 * 1000
+}
+
+const findPlacesTool = tool({
+  description:
+    'Look up real US restaurants, parks, scenic stops, and EV charging stations by name and city before including them in a final itinerary. Results come from OpenStreetMap via Photon. Use returned street addresses verbatim; a null address means no street address was found and must not be invented.',
+  inputSchema: z.object({
+    queries: z.array(z.string().min(3).max(120)).min(1).max(8)
+      .describe('Specific place searches including city and state, e.g. "Tesla Supercharger Folsom CA"'),
+  }),
+  execute: async ({ queries }) => ({
+    source: 'OpenStreetMap via Photon',
+    results: await Promise.all(queries.map(async (query) => {
+      try {
+        const matches = await searchPlaces(query)
+        const city = /charg|supercharger|evgo|electrify/i.test(query) ? cityInQuery(query) : undefined
+        const nearbyChargers = city && !matches.some((match) =>
+          match.address && match.area.toLowerCase().includes(city.name.toLowerCase()) && /charg/i.test(match.kind ?? ''))
+          ? (await searchPlaces(`Tesla Supercharger ${city.name} ${city.state}`)).filter((match) =>
+            match.address && match.area.toLowerCase().includes(city.name.toLowerCase()) && /charg/i.test(match.kind ?? ''))
+          : []
+        if (verifiedAddresses.size > 1000) verifiedAddresses.clear()
+        for (const match of [...matches, ...nearbyChargers]) {
+          if (match.address) verifiedAddresses.set(placeKey(match.name, match.address), Date.now())
+        }
+        return { query, matches, nearbyChargers }
+      } catch {
+        return { query, matches: [], error: 'Lookup unavailable; do not invent an address.' }
+      }
+    })),
+  }),
+})
+
 const askMultipleChoiceTool = tool({
   description:
     'Ask the user a multiple choice question and wait for their selection. Use this when you need the user to pick from a set of options, for example trip pace, accommodation type, route preference, or activity interests.',
@@ -129,12 +182,12 @@ const askMultipleChoiceTool = tool({
 
 const showRouteStopsTool = tool({
   description:
-    'Display the named restaurants, parks, scenic overlooks, and other places the traveler will visit as visual cards. Include only stops on the chosen itinerary, with a specific name, location, and reason to visit.',
+    'Display the named restaurants, parks, scenic overlooks, and other places the traveler will visit as visual cards. Include only stops on the chosen itinerary, with a specific name, verified street address, and reason to visit.',
   inputSchema: z.object({
     stops: z.array(
       z.object({
         name: z.string().describe('Name of the stop (e.g. "Blue Bottle Coffee", "In-N-Out Burger")'),
-        location: z.string().describe('City or address of the stop (e.g. "Santa Barbara, CA")'),
+        location: z.string().describe('Full street address returned by findPlaces (e.g. "220 Iron Point Road, Folsom, CA 95630"); never just a city'),
         category: z
           .enum(['food', 'coffee', 'fuel', 'attraction', 'lodging', 'shopping', 'scenic', 'entertainment', 'default'])
           .describe('Category for the stop icon'),
@@ -147,14 +200,14 @@ const showRouteStopsTool = tool({
 
 const showRouteSummaryTool = tool({
   description:
-    'Display the completed itinerary as a visual timeline and generate its Google Maps directions link. Include every planned charging, dining, park, and scenic stop in driving order, with a specific place name and location. Call this after the detailed route text and other stop cards so the map link ends the answer.',
+    'Display the completed itinerary as a visual timeline and generate its Google Maps directions link. Include every planned charging, dining, park, and scenic stop in driving order, with a specific place name and verified full street address. Call this after the detailed route text and other stop cards so the map link ends the answer.',
   inputSchema: z.object({
     origin: z.string().describe('Starting location (e.g. "San Francisco, CA")'),
     destination: z.string().describe('End destination (e.g. "Los Angeles, CA")'),
     stops: z.array(
       z.object({
         name: z.string().describe('Name of the stop'),
-        location: z.string().describe('City or address'),
+        location: z.string().describe('Full street address returned by findPlaces, not just a city'),
         category: z
           .enum(['food', 'coffee', 'fuel', 'attraction', 'lodging', 'shopping', 'scenic', 'entertainment', 'default'])
           .nullable().optional(),
@@ -196,13 +249,13 @@ const showSuggestedStopsTool = tool({
 
 const showChargingStationsTool = tool({
   description:
-    'Display the specific candidate EV charging stops on the chosen route, in driving order. Name the station and network only when reasonably confident they exist; otherwise name the charging area and leave unknown details null. Do not claim live availability.',
+    'Display specific EV charging stops on the chosen route, in driving order. Include the station name and its verified full street address from findPlaces. When lookup fails, clearly label a candidate charging area and leave unknown details null. Do not claim live availability.',
   inputSchema: z.object({
     title: z.string().nullable().optional().describe('Optional section title'),
     stations: z.array(
       z.object({
         name: z.string().describe('Station name (e.g. "Tesla Supercharger - Santa Barbara")'),
-        location: z.string().describe('Address or city'),
+        location: z.string().describe('Full street address returned by findPlaces; if unavailable, explicitly say the address is unverified'),
         network: z.string().nullable().optional().describe('Charging network (e.g. "Tesla", "Electrify America", "ChargePoint")'),
         ports: z.number().int().nullable().optional().describe('Number of charging ports'),
         maxKw: z.number().nullable().optional().describe('Maximum charging speed in kW'),
@@ -238,9 +291,89 @@ const showRouteOptionsTool = tool({
   }),
 })
 
+// A completed itinerary is one structured tool call. The client renders its
+// text and existing cards in order, so the model cannot print fake tool calls.
+const publishPlanTool = tool({
+  description: 'Publish the completed EV trip in the existing answer layout: plain-text route legs, place cards, charging cards, then the route timeline and Google Maps link. Every planned stop must have the exact real name and full street address returned by findPlaces. The server rejects unverified addresses so you can look up an alternative.',
+  inputSchema: z.object({
+    itinerary: z.string().min(20).describe('Plain-text overview and short numbered route legs, including exact place names and full street addresses in driving order. No Markdown symbols or function-call text.'),
+    places: z.array(z.object({
+      name: z.string(),
+      location: z.string().describe('Verified full street address from findPlaces; never just a city'),
+      category: z.enum(['food', 'coffee', 'fuel', 'attraction', 'lodging', 'shopping', 'scenic', 'entertainment', 'default']),
+      description: z.string().nullable().optional(),
+    })).max(8).describe('Only optional non-charging stops actually included in the plan'),
+    chargingStations: z.array(z.object({
+      name: z.string(),
+      location: z.string().describe('Verified full street address returned by findPlaces'),
+      network: z.string().nullable().optional(),
+      ports: z.number().int().nullable().optional(),
+      maxKw: z.number().nullable().optional(),
+      distanceFromRoute: z.string().nullable().optional(),
+      estimatedChargingTime: z.string().nullable().optional(),
+      amenitiesNearby: z.array(z.string()).nullable().optional(),
+    })).max(6).describe('Only charging stops needed for the stated range'),
+    summary: z.object({
+      origin: z.string(),
+      destination: z.string(),
+      stops: z.array(z.object({
+        name: z.string(),
+        location: z.string().describe('Same full street address as the corresponding place or charging card'),
+        category: z.enum(['food', 'coffee', 'fuel', 'attraction', 'lodging', 'shopping', 'scenic', 'entertainment', 'default']).nullable().optional(),
+        durationFromPrev: z.string().nullable().optional(),
+      })).max(9).describe('All planned intermediate stops, in exact driving order'),
+      totalDistance: z.string().nullable().optional(),
+      totalDuration: z.string().nullable().optional(),
+      approximateEta: z.string().nullable().optional(),
+      vehicleModel: z.string().nullable().optional(),
+      routeTag: z.string().nullable().optional(),
+    }),
+  }),
+  execute: async (plan) => {
+    const errors: string[] = []
+    const cards = [...plan.places, ...plan.chargingStations]
+    for (const stop of cards) {
+      if (!wasVerified(stop.name, stop.location)) {
+        errors.push(`${stop.name} at ${stop.location} was not in the place lookup results. Search for a real named stop with a street address and use the returned name and address exactly.`)
+      }
+      const street = stop.location.split(',')[0].toLowerCase()
+      if (!plan.itinerary.toLowerCase().includes(street)) {
+        errors.push(`Include ${stop.name}'s street address (${street}) in the itinerary text.`)
+      }
+    }
+    for (const stop of plan.summary.stops) {
+      if (!cards.some((card) => placeKey(card.name, card.location) === placeKey(stop.name, stop.location))) {
+        errors.push(`${stop.name} in the route summary must match a place or charging card exactly.`)
+      }
+    }
+    for (const stop of cards) {
+      if (!plan.summary.stops.some((summary) => placeKey(stop.name, stop.location) === placeKey(summary.name, summary.location))) {
+        errors.push(`${stop.name} is missing from the route summary.`)
+      }
+    }
+    if (errors.length) return { valid: false, errors, plan: null }
+    return {
+      valid: true,
+      errors: [],
+      plan: {
+        ...plan,
+        chargingStations: plan.chargingStations.map((station) => ({
+          ...station,
+          ports: null,
+          maxKw: null,
+          estimatedChargingTime: null,
+          amenitiesNearby: null,
+        })),
+      },
+    }
+  },
+})
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 const tools = {
+  findPlaces: findPlacesTool,
+  publishPlan: publishPlanTool,
   askMultipleChoice: askMultipleChoiceTool,
   showRouteStops: showRouteStopsTool,
   showRouteSummary: showRouteSummaryTool,
@@ -260,14 +393,16 @@ const SYSTEM_PROMPT = `You are Routewise, a friendly and knowledgeable AI road t
 - After a completed itinerary, treat the next user message as a follow-up. Answer questions about the existing route directly. If they request changes, revise the relevant part and update the route summary; if they request a new trip, plan it using the known EV range unless they changed vehicles. Do not restart the entire questionnaire or repeat the full itinerary for a small question.
 - Plan charging legs conservatively: allow a reserve and account for weather, terrain, and highway speed. If the starting battery level is unknown, clearly state the starting-charge assumption. Never promise that a leg is safely reachable from the rated range alone.
 - You do not have access to live maps, road closures, charger status, or reservation systems. State that routes, drive times, and charging suggestions are estimates. Never claim a charger is available, operational, or compatible without verified data.
-- If the traveler provides a street address or named business for the start or destination, preserve that full location in showRouteSummary so the map opens at the intended place, rather than reducing it to a city name.
+- You CAN use findPlaces to search OpenStreetMap place data for names and street addresses. This is a place directory, not live routing or charger-status data. Before naming any restaurant, park entrance, overlook, or charging station as a PLANNED STOP, use findPlaces with the place name and city/state. Choose a returned match that has both the correct name and a non-null street address. Copy that address exactly into publishPlan.itinerary, the corresponding card, and publishPlan.summary. Keep the same place name and address in every view. For a park or viewpoint without a numbered street address, search for a named entrance, visitor center, or trailhead with an address. If no address can be found, say the street address could not be verified and do not invent one; prefer another stop with an address. Never treat a name-only search result as proof of a street address.
+- If the traveler provides a street address or named business for the start or destination, preserve that full location in publishPlan.summary so the map opens at the intended place, rather than reducing it to a city name.
 - Do not invent exact charger port counts, power ratings, or real-time availability. Use null for unknown fields and invite the traveler to verify the route and charger details before departure.
-- Give the traveler a complete itinerary in plain text before the visual cards: the chosen highways/roads, each leg in driving order with approximate distance and driving time, where and why to charge (including an estimated charging break only if the vehicle and charge assumptions support it), and the specific names and locations of restaurants, parks, scenic overlooks, or other places they will visit. Explain what they will do at each stop. Distinguish drive time from time spent charging or visiting. If no en-route charge is needed, say so and explain the starting-charge assumption. Be concise: the cards will carry supporting details, so do not repeat their descriptions in long prose.
+- Give the traveler a complete itinerary in plain text before the visual cards: the chosen highways/roads, each leg in driving order with approximate distance and driving time, where and why to charge (including an estimated charging break only if the vehicle and charge assumptions support it), and the specific names and full street addresses of restaurants, parks, scenic overlooks, charging stations, or other places they will visit. Explain what they will do at each stop. Distinguish drive time from time spent charging or visiting. If no en-route charge is needed, say so and explain the starting-charge assumption. Be concise: the cards will carry supporting details, so do not repeat their descriptions in long prose.
 - Include only places you are reasonably confident exist. Never fabricate a restaurant, park, charger, address, or precise schedule. Mark uncertain charging locations as candidate areas and ask the traveler to confirm them before departure. If the vehicle, starting state of charge, departure time, or connector is unknown, state the assumption instead of making up a precise charging duration or ETA.
-- The final route summary must include EVERY stop the itinerary actually plans to visit, in exactly the same order as the detailed text and charging/place cards. Use the specific place name plus a location or address, not just a city. Keep the complete itinerary to at most nine intermediate stops so one Google Maps directions link can include them all. Treat extra suggestions as optional alternatives, not part of the mapped route.
-- Restaurants, parks, scenic overlooks, and other sightseeing stops are optional. If the traveler chooses "No extra stops" or skips stop suggestions, do not add optional stops anyway. Include only charging stops actually needed for their EV range; a trip can have zero intermediate stops. Do not call showRouteStops when there are no optional places to show.
-- Even when there are zero intermediate stops, write a short plain-text route explanation with the chosen road, estimated distance and drive time, and whether charging is needed BEFORE calling showRouteSummary. Never send a route-summary card by itself as the whole final answer.
+- The final route summary must include EVERY stop the itinerary actually plans to visit, in exactly the same order as the detailed text and charging/place cards. Use the verified specific place name plus its full street address, not just a city. Keep the complete itinerary to at most nine intermediate stops so one Google Maps directions link can include them all. Treat extra suggestions as optional alternatives, not part of the mapped route.
+- Restaurants, parks, scenic overlooks, and other sightseeing stops are optional. If the traveler chooses "No extra stops" or skips stop suggestions, do not add optional stops anyway. Include only charging stops actually needed for their EV range; a trip can have zero intermediate stops. Pass an empty places array when there are no optional places.
+- Even when there are zero intermediate stops, include a short plain-text route explanation with the chosen road, estimated distance and drive time, and whether charging is needed inside publishPlan.itinerary. Never send a route-summary card by itself as the whole final answer.
 - After collecting the user's preferences, produce the itinerary, supporting cards, and final Route Summary in one answer. Do NOT ask the user to confirm the plan first. The user will follow up with changes if they want adjustments.
+- For the final itinerary, use ONE real publishPlan tool call. Put the short plain-text overview and numbered legs in itinerary, non-charging places in places, needed chargers in chargingStations, and all stops in summary.stops in driving order. The client renders these in the existing layout: text, places, charging cards, route timeline, then Google Maps link. Do not write the itinerary separately, call showRouteStops/showChargingStations/showRouteSummary separately, print pseudo-code, or paste a raw Google Maps URL. Continue normal conversational text for questions and follow-ups that do not need a new itinerary.
 
 ## Conversation Flow
 1. Greet briefly and identify the trip (origin and destination). A casual greeting alone is not a trip request.
@@ -275,10 +410,16 @@ const SYSTEM_PROMPT = `You are Routewise, a friendly and knowledgeable AI road t
 3. If multiple viable routes exist, use showRouteOptions to let the user choose one.
 4. Ask only for important missing preferences using askMultipleChoice (one at a time): trip pace, dining style, scenic vs. fast, etc. If the traveler already supplied enough detail, go straight to the itinerary.
 5. Optionally use showSuggestedStops with multiSelect: true to gather stop-type preferences. The traveler can choose no extra stops; accept that choice and continue directly to the itinerary.
-6. Once you have the route and preferences, write a short overview followed by the leg-by-leg itinerary in plain text. Then call showRouteStops for the named places and showChargingStations only when charging is needed for the stated range.
-7. Call showRouteSummary LAST with every planned stop in driving order. The Google Maps link in that card must be the last part of your answer. Do not write more text or call more tools afterward.
+6. Once you have the route and preferences, call findPlaces for each restaurant, park entrance, viewpoint, and needed EV charging station you intend to include. Search for all intended stops in one batch when possible. Use only matching returned names and street addresses.
+7. Call publishPlan with the complete itinerary, supporting cards, and summary. Do not write more text or call more tools afterward. This also applies when there are zero intermediate stops: pass empty places, chargingStations, and summary.stops arrays.
 
 ## Tool Usage Guidelines
+
+### findPlaces
+Look up planned stops in batches with queries that include the name and city/state. Use the returned address only for the matching place. For charging searches, nearbyChargers may contain verified named stations in that city when the requested network has no result; use one of those rather than inventing a station for the preferred network. Search another candidate when a result lacks a street address or the name is ambiguous. Never turn a failed lookup into a fabricated address. Search stop locations before producing the final itinerary; do not call this tool for routine conversational questions or when the route has no intermediate stops.
+
+### publishPlan
+This is the ONLY tool for publishing a completed or revised itinerary. Put exact place names and full street addresses from findPlaces in itinerary and in each matching card/summary field. Keep the total itinerary concise and plain text. If a chosen place has no verified address, search for a different named place before publishing. The server will reject any invented address and return the specific errors so you can correct them. The summary must include all planned stops in driving order; the client creates the final Google Maps link.
 
 ### askMultipleChoice
 Use to collect structured preferences. ALWAYS provide 4 options when possible (they render in a 2-column grid). Examples: trip pace (Relaxed / Moderate / Fast / Flexible), dining style (Local gems / Fine dining / Quick bites / Roadside classics), scenic preference, time of departure. Limit to one question at a time. For any optional stop question, include a "No extra stops" option.
@@ -289,14 +430,7 @@ Use to let the user pick categories or types of stops (e.g. coffee, scenic overl
 ### showRouteOptions
 Use when there are 2+ viable route alternatives (e.g. coastal vs. inland, PCH vs. I-5). Offer route options early in the planning so the user can choose direction. Include distance, EV-aware drive time, highlights, and tags (scenic, fast, eco, popular).
 
-### showRouteStops
-Use to display the specific restaurants, parks, viewpoints, and attractions actually included in the chosen itinerary. Give each a useful description and location. NEVER use this for charging — use showChargingStations for charging.
-
-### showChargingStations
-Use proactively when the trip may exceed the vehicle's comfortable range. Give the station name, network, and location for each planned charging stop when reasonably confident they exist. Otherwise give a clearly labeled candidate charging area. Set unknown kW speeds, port counts, charging time, and amenities to null. The traveler must verify locations, connector compatibility, and availability before driving. Do not add an unnecessary charging stop to a short trip.
-
-### showRouteSummary
-The "final plan" view with origin → every planned stop → destination timeline and Google Maps directions link. Call this LAST, after the detailed text and other cards — do not wait for confirmation. Include all planned charging stops and points of interest, in driving order, with specific names and locations. Use no more than nine intermediate stops. Do not substitute a city center for a named place. Give totalDistance and totalDuration as estimates, and use null for approximateEta unless a departure time is known. If the user has mentioned their EV model, pass it as vehicleModel. Always pass a routeTag (e.g. "Fastest Route", "Scenic Route", "EV-Optimized"). For charging stops, use category 'fuel' (which renders as Charging in the UI).
+The older showRouteStops, showChargingStations, and showRouteSummary tools exist only so previous conversations can be read. Do not use them for new final plans.
 
 ## Style Tips
 - Be conversational, warm, and enthusiastic.
@@ -375,7 +509,30 @@ export async function POST(req: Request) {
         : `${SYSTEM_PROMPT}\n\nThe traveler stated an EV full-charge range of ${evRangeMiles} miles. Use this range when planning charging stops and explain your starting-charge and reserve assumptions.`,
       messages: modelMessages,
       tools,
-      stopWhen: stepCountIs(15),
+      stopWhen: [stepCountIs(15), ({ steps }) => steps.some((step) =>
+        step.toolResults.some((result) => result.toolName === 'publishPlan' &&
+          (result.output as { valid?: boolean }).valid === true))],
+      prepareStep: ({ steps }) => {
+        const lookups = steps.flatMap((step) => step.toolCalls).filter((call) => call.toolName === 'findPlaces').length
+        const lastPlan = steps.flatMap((step) => step.toolResults)
+          .filter((result) => result.toolName === 'publishPlan').at(-1)
+        if (lastPlan && (lastPlan.output as { valid?: boolean }).valid === false) {
+          return { activeTools: ['findPlaces', 'publishPlan'], toolChoice: 'required' }
+        }
+        if (lookups >= 2) {
+          return {
+            activeTools: ['publishPlan'],
+            toolChoice: { type: 'tool', toolName: 'publishPlan' },
+          }
+        }
+        if (lookups === 1) {
+          return {
+            activeTools: ['findPlaces', 'publishPlan'],
+            toolChoice: 'required',
+          }
+        }
+        return undefined
+      },
       abortSignal: req.signal,
     })
 

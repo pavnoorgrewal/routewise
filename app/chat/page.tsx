@@ -68,6 +68,65 @@ function ToolPartRenderer({
   part: NonNullable<ChatMessage["parts"]>[number];
   addToolOutput: ReturnType<typeof useChat>["addToolOutput"];
 }) {
+  if (part.type === "tool-publishPlan") {
+    type PlanInput = {
+      itinerary: string;
+      places: Array<{
+        name: string;
+        location: string;
+        category: "food" | "coffee" | "fuel" | "attraction" | "lodging" | "shopping" | "scenic" | "entertainment" | "default";
+        description?: string | null;
+      }>;
+      chargingStations: Array<{
+        name: string;
+        location: string;
+        network?: string | null;
+        ports?: number | null;
+        maxKw?: number | null;
+        distanceFromRoute?: string | null;
+        estimatedChargingTime?: string | null;
+        amenitiesNearby?: string[] | null;
+      }>;
+      summary: {
+        origin: string;
+        destination: string;
+        stops: Array<{
+          name: string;
+          location: string;
+          category?: "food" | "coffee" | "fuel" | "attraction" | "lodging" | "shopping" | "scenic" | "entertainment" | "default" | null;
+          durationFromPrev?: string | null;
+        }>;
+        totalDistance?: string | null;
+        totalDuration?: string | null;
+        approximateEta?: string | null;
+        vehicleModel?: string | null;
+        routeTag?: string | null;
+      };
+    };
+    const p = part as {
+      type: "tool-publishPlan";
+      state: "input-streaming" | "input-available" | "output-available" | "output-error";
+      input?: PlanInput;
+      output?: { valid: boolean; errors?: string[]; plan?: PlanInput | null };
+    };
+    const plan = p.output?.valid ? p.output.plan : null;
+    if (!plan) {
+      return p.state === "output-available" || p.state === "output-error"
+        ? null
+        : <p className="text-sm text-muted-foreground">Checking place details…</p>;
+    }
+    return (
+      <div className="flex w-full flex-col gap-4">
+        <div className="max-w-[70ch] whitespace-pre-wrap text-[15px] leading-7 text-foreground">
+          {displayAssistantText(plan.itinerary)}
+        </div>
+        {plan.places.length > 0 && <RouteStopList stops={plan.places} />}
+        {plan.chargingStations.length > 0 && <ChargingStations stations={plan.chargingStations} />}
+        <RouteSummary {...plan.summary} state="input-available" />
+      </div>
+    );
+  }
+
   // askMultipleChoice
   if (part.type === "tool-askMultipleChoice") {
     const p = part as {
@@ -554,6 +613,14 @@ function ChatPageInner() {
                       ?.map((part, partIndex) => ({ part, partIndex }))
                       .map(({ part, partIndex }) => {
                         if (part.type === "text") {
+                          // A published plan already includes its itinerary text.
+                          // Hide model text around the tool call so the answer
+                          // appears once, with the map at the end.
+                          if (message.parts?.some((candidate) =>
+                            candidate.type === "tool-publishPlan" &&
+                            candidate.state === "output-available" &&
+                            (candidate.output as { valid?: boolean } | undefined)?.valid
+                          )) return null;
                           return (
                             <div
                               key={partIndex}

@@ -31,7 +31,7 @@ const inspirations = [
     icon: Mountain,
     from: "San Francisco, CA",
     to: "South Lake Tahoe, CA",
-    image: "/images/hero-road.jpg",
+    image: "/images/tahoe-winter-road.jpg",
     title: "Find your elevation.",
     caption: "Fresh air. A little perspective.",
     label: "San Francisco → Lake Tahoe",
@@ -62,10 +62,6 @@ export function Hero() {
               You.
             </span>
           </h1>
-          <p className="entrance mt-7 max-w-[26rem] text-base leading-7 text-muted-foreground [animation-delay:140ms] md:text-lg">
-            The open road, without the open tabs. Scenic routes, thoughtful
-            stops, and EV charging, all in one conversation.
-          </p>
           <form
             aria-label="Plan your road trip"
             onSubmit={(event) => {
@@ -75,7 +71,7 @@ export function Hero() {
                   `/chat?message=${encodeURIComponent(`Help me plan a trip from ${from.trim()} to ${to.trim()}`)}`,
                 );
             }}
-            className="trip-form entrance relative mt-8 max-w-[28rem] rounded-[22px] border border-black/[0.08] bg-white p-2 shadow-[0_4px_6px_-4px_#0000000a,0_20px_50px_-25px_#38302125] [animation-delay:210ms]"
+            className="trip-form entrance relative mt-10 max-w-[28rem] rounded-[22px] border border-black/[0.08] bg-white p-2 shadow-[0_4px_6px_-4px_#0000000a,0_20px_50px_-25px_#38302125] [animation-delay:140ms]"
           >
             <div className="relative z-20 flex items-center gap-3 px-3 py-3">
               <Navigation
@@ -111,10 +107,6 @@ export function Hero() {
               </button>
             </div>
           </form>
-          <div className="entrance mt-5 flex items-center gap-2 text-xs text-muted-foreground [animation-delay:280ms]">
-            <Zap className="h-3.5 w-3.5" aria-hidden="true" /> Built around your
-            EV. Shaped around you.
-          </div>
         </div>
 
         <div className="hero-art entrance relative mx-auto w-full max-w-[520px] pb-8 pt-4 [animation-delay:180ms]">
@@ -131,7 +123,7 @@ export function Hero() {
                   alt={
                     index === 0
                       ? "A winding road along a sunlit coastline"
-                      : "An open road through a mountain valley"
+                      : "A winding road through snow-covered trees on the way to Lake Tahoe"
                   }
                   fill
                   priority={index === 0}
