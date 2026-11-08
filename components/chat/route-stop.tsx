@@ -153,10 +153,10 @@ export function RouteStop({
       </div>
       <div className="flex flex-col gap-0.5 min-w-0 flex-1">
         <div className="flex items-center justify-between gap-1">
-          <p className="text-sm font-semibold text-foreground truncate">{name}</p>
+          <p className="text-sm font-semibold text-foreground break-words">{name}</p>
           <ArrowRight className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
         </div>
-        <p className="text-xs text-muted-foreground truncate">{location}</p>
+        <p className="text-xs text-muted-foreground break-words">{location}</p>
         {description && (
           <p className="text-xs text-muted-foreground mt-1 leading-relaxed line-clamp-2">
             {description}
