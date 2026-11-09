@@ -132,10 +132,7 @@ export function Hero() {
                 />
               ))}
               <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/60" />
-              <div className="absolute left-5 right-5 top-5 flex items-center justify-between gap-2">
-                <span className="rounded-full border border-white/25 bg-black/15 px-3 py-1.5 text-[10px] font-medium uppercase tracking-[0.13em] text-white backdrop-blur-xl">
-                  Trip inspiration
-                </span>
+              <div className="absolute right-5 top-5">
                 <span className="flex items-center gap-1.5 text-[11px] text-white">
                   <span className="h-1.5 w-1.5 rounded-full bg-lime-300" />{" "}
                   Scenic by nature

@@ -18,7 +18,7 @@ export function Footer() {
               href="/proposal"
               className="group flex w-fit items-center gap-5 text-sm text-muted-foreground transition-colors hover:text-foreground"
             >
-              The Story{" "}
+              Why use Routewise{" "}
               <ArrowUpRight className="h-3.5 w-3.5 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
             </Link>
           </nav>
