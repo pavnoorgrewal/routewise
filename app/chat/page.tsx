@@ -282,6 +282,7 @@ function ToolPartRenderer({
         multiSelect={p.input?.multiSelect ?? true}
         state={p.state === "output-error" ? "input-available" : p.state}
         selectedIds={p.output?.map((o) => o.id)}
+        selectedStops={p.output}
         onSelect={(selected) => {
           addToolOutput({
             tool: "showSuggestedStops",

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Check } from 'lucide-react'
+import { Check, Plus, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { RouteStopCategory } from './route-stop'
 import {
@@ -29,6 +29,7 @@ export interface SuggestedStopsProps {
   multiSelect?: boolean
   state?: 'input-streaming' | 'input-available' | 'output-available'
   selectedIds?: string[]
+  selectedStops?: { id: string; label: string }[]
   onSelect?: (selected: SuggestedStopChip[]) => void
 }
 
@@ -50,13 +51,21 @@ export function SuggestedStops({
   multiSelect = true,
   state = 'input-available',
   selectedIds: controlledSelectedIds,
+  selectedStops = [],
   onSelect,
 }: SuggestedStopsProps) {
   const [internalSelected, setInternalSelected] = useState<string[]>([])
+  const [customStops, setCustomStops] = useState<string[]>([''])
 
   const isCommitted = state === 'output-available'
   const selectedIds = isCommitted ? controlledSelectedIds ?? [] : internalSelected
   const isSelectable = state === 'input-available'
+  const namedStops = customStops.map((name, index) => ({
+    id: `custom-stop-${index}`,
+    label: name.trim(),
+    category: 'default' as const,
+  })).filter((stop) => stop.label)
+  const selectionCount = internalSelected.length + namedStops.length
 
   const toggle = (chip: SuggestedStopChip) => {
     if (!isSelectable) return
@@ -71,8 +80,8 @@ export function SuggestedStops({
   }
 
   const confirm = () => {
-    if (!isSelectable || internalSelected.length === 0) return
-    onSelect?.(chips.filter((c) => internalSelected.includes(c.id)))
+    if (!isSelectable || selectionCount === 0) return
+    onSelect?.([...chips.filter((c) => internalSelected.includes(c.id)), ...namedStops])
   }
 
   const skip = () => {
@@ -95,7 +104,9 @@ export function SuggestedStops({
   }
 
   if (isCommitted && selectedIds.length > 0) {
-    const selected = chips.filter((c) => selectedIds.includes(c.id))
+    const selected = selectedStops.length > 0
+      ? selectedStops.map((stop) => chips.find((chip) => chip.id === stop.id) ?? { ...stop, category: 'default' as const })
+      : chips.filter((c) => selectedIds.includes(c.id))
     return (
       <div className="flex flex-col gap-1.5">
         <p className="text-xs font-medium text-muted-foreground">{title}</p>
@@ -161,21 +172,52 @@ export function SuggestedStops({
         })}
       </div>
       {multiSelect && isSelectable && (
+        <div className="rounded-2xl border border-border bg-white/70 p-3">
+          <p className="mb-2 text-xs font-semibold text-foreground">Have a specific place in mind?</p>
+          <div className="flex flex-col gap-2">
+            {customStops.map((name, index) => (
+              <div key={index} className="flex items-center gap-2">
+                <input
+                  type="text"
+                  aria-label={`Specific stop ${index + 1}`}
+                  placeholder="Restaurant or place name, city"
+                  value={name}
+                  maxLength={120}
+                  disabled={!isSelectable}
+                  onChange={(event) => setCustomStops((previous) => previous.map((stop, item) => item === index ? event.target.value : stop))}
+                  className="min-w-0 flex-1 rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-foreground"
+                />
+                {customStops.length > 1 && (
+                  <button type="button" aria-label={`Remove specific stop ${index + 1}`} onClick={() => setCustomStops((previous) => previous.filter((_, item) => item !== index))} className="rounded-full p-2 text-muted-foreground hover:bg-muted hover:text-foreground">
+                    <X className="h-4 w-4" aria-hidden="true" />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+          {customStops.length < 6 && (
+            <button type="button" onClick={() => setCustomStops((previous) => [...previous, ''])} className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-foreground hover:text-brand">
+              <Plus className="h-3.5 w-3.5" aria-hidden="true" /> Add stop
+            </button>
+          )}
+        </div>
+      )}
+      {multiSelect && isSelectable && (
         <div className="flex items-center gap-2">
           <button
             onClick={confirm}
-            disabled={internalSelected.length === 0}
+            disabled={selectionCount === 0}
             className={cn(
               'inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-semibold border transition-all',
-              internalSelected.length > 0
+              selectionCount > 0
                 ? 'bg-foreground text-background border-foreground hover:bg-foreground/90 cursor-pointer'
                 : 'bg-muted text-muted-foreground border-border cursor-not-allowed'
             )}
           >
             <Check className="h-3 w-3" />
             Confirm
-            {internalSelected.length > 0 && (
-              <span className="opacity-70">({internalSelected.length})</span>
+            {selectionCount > 0 && (
+              <span className="opacity-70">({selectionCount})</span>
             )}
           </button>
           <p className="text-xs text-muted-foreground">Pick as many as you like</p>
