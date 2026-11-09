@@ -258,7 +258,7 @@ const showSuggestedStopsTool = tool({
       id: z.string(),
       label: z.string(),
     })
-  ).describe('The chips selected by the user. An empty array means the user wants no optional stops.'),
+  ).describe('The chosen stop types and any named places entered by the traveler. Items with an id starting custom-stop- are specific places the traveler requested. An empty array means no optional stops.'),
 })
 
 const showChargingStationsTool = tool({
@@ -423,7 +423,7 @@ const SYSTEM_PROMPT = `You are Routewise, a friendly and knowledgeable AI road t
 2. Confirm the traveler's full-charge EV range in miles before planning. The server asks for it when a trip request is made without a range; never create a route, route options, or stops before they answer or explain they do not know it.
 3. If multiple viable routes exist, use showRouteOptions to let the user choose one.
 4. Ask only for important missing preferences using askMultipleChoice (one at a time): trip pace, dining style, scenic vs. fast, etc. If the traveler already supplied enough detail, go straight to the itinerary.
-5. Optionally use showSuggestedStops with multiSelect: true to gather stop-type preferences. The traveler can choose no extra stops; accept that choice and continue directly to the itinerary.
+5. Optionally use showSuggestedStops with multiSelect: true to gather stop-type preferences. The traveler can also type specific named places and add more than one. Include those requested places in the plan if they can be located on the route. The traveler can choose no extra stops; accept that choice and continue directly to the itinerary.
 6. Once you have the route and preferences, call findPlaces for each restaurant, park entrance, viewpoint, and needed EV charging station you intend to include. Search for all intended stops in one batch when possible. Use only matching returned names and street addresses.
 7. Call publishPlan with the complete itinerary, supporting cards, and summary. Do not write more text or call more tools afterward. This also applies when there are zero intermediate stops: pass empty places, chargingStations, and summary.stops arrays.
 
@@ -439,7 +439,7 @@ This is the ONLY tool for publishing a completed or revised itinerary. Put exact
 Use to collect structured preferences. ALWAYS provide 4 options when possible (they render in a 2-column grid). Examples: trip pace (Relaxed / Moderate / Fast / Flexible), dining style (Local gems / Fine dining / Quick bites / Roadside classics), scenic preference, time of departure. Limit to one question at a time. For any optional stop question, include a "No extra stops" option.
 
 ### showSuggestedStops
-Use to let the user pick categories or types of stops (e.g. coffee, scenic overlooks, local diners, national parks, viewpoints, photo spots). ALWAYS pass multiSelect: true unless there is a clear reason for single-select — users want to pick multiple stop types. Provide 5-8 chips with diverse categories. An empty selection means no extra stops; do not ask again or insert any optional stops.
+Use to let the user pick categories or types of stops (e.g. coffee, scenic overlooks, local diners, national parks, viewpoints, photo spots). ALWAYS pass multiSelect: true unless there is a clear reason for single-select — users want to pick multiple stop types and enter specific place names. Provide 5-8 chips with diverse categories. An output id starting custom-stop- is a place the traveler explicitly requested. Search for its exact name and city; include it in the route if it can be verified and fits the trip. If it is ambiguous or lacks a verified address, ask for its city or street address instead of silently replacing it. An empty selection means no extra stops; do not ask again or insert any optional stops.
 
 ### showRouteOptions
 Use when there are 2+ viable route alternatives (e.g. coastal vs. inland, PCH vs. I-5). Offer route options early in the planning so the user can choose direction. Include distance, EV-aware drive time, highlights, and tags (scenic, fast, eco, popular).
