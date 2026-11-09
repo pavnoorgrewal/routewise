@@ -84,6 +84,15 @@ function modelHistory(messages: ChatMessage[]): ChatMessage[] {
   return messages.slice(-24).map((message) => ({
     ...message,
     parts: message.parts.flatMap((part) => {
+      // Keep completed plans for follow-ups without resending raw place-search
+      // results, rejected drafts, or duplicate copies of every card.
+      if (part.type === 'tool-findPlaces') return []
+      if (part.type === 'tool-publishPlan') {
+        const output = part.state === 'output-available' ? part.output : undefined
+        if (!output?.valid || !output.plan) return []
+        const plan = output.plan
+        return [{ type: 'text' as const, text: `Completed trip: ${plan.summary.origin} to ${plan.summary.destination}.\n${plan.itinerary}\nStops in driving order: ${plan.summary.stops.map((stop) => `${stop.name}, ${stop.location}`).join(' → ')}. Estimated total: ${plan.summary.totalDistance ?? 'unknown'}, ${plan.summary.totalDuration ?? 'unknown'}.` }]
+      }
       if (part.type === 'tool-showRouteSummary' && part.state === 'input-available') {
         const route = part.input
         const stops = route.stops.map((stop) => `${stop.name} (${stop.location})`).join(' → ')
@@ -139,11 +148,16 @@ const findPlacesTool = tool({
     source: 'OpenStreetMap via Photon',
     results: await Promise.all(queries.map(async (query) => {
       try {
-        const matches = await searchPlaces(query)
         const city = /charg|supercharger|evgo|electrify/i.test(query) ? cityInQuery(query) : undefined
+        const fallbackQuery = city ? `Tesla Supercharger ${city.name} ${city.state}` : null
+        const [matches, fallback] = await Promise.all([
+          searchPlaces(query),
+          fallbackQuery && placeKey(query, '') !== placeKey(fallbackQuery, '')
+            ? searchPlaces(fallbackQuery).catch(() => []) : Promise.resolve([]),
+        ])
         const nearbyChargers = city && !matches.some((match) =>
           match.address && match.area.toLowerCase().includes(city.name.toLowerCase()) && /charg/i.test(match.kind ?? ''))
-          ? (await searchPlaces(`Tesla Supercharger ${city.name} ${city.state}`)).filter((match) =>
+          ? fallback.filter((match) =>
             match.address && match.area.toLowerCase().includes(city.name.toLowerCase()) && /charg/i.test(match.kind ?? ''))
           : []
         if (verifiedAddresses.size > 1000) verifiedAddresses.clear()
@@ -509,6 +523,9 @@ export async function POST(req: Request) {
         : `${SYSTEM_PROMPT}\n\nThe traveler stated an EV full-charge range of ${evRangeMiles} miles. Use this range when planning charging stops and explain your starting-charge and reserve assumptions.`,
       messages: modelMessages,
       tools,
+      providerOptions: {
+        google: { thinkingConfig: { thinkingLevel: 'minimal' } },
+      },
       stopWhen: [stepCountIs(15), ({ steps }) => steps.some((step) =>
         step.toolResults.some((result) => result.toolName === 'publishPlan' &&
           (result.output as { valid?: boolean }).valid === true))],
@@ -531,7 +548,7 @@ export async function POST(req: Request) {
             toolChoice: 'required',
           }
         }
-        return undefined
+        return { activeTools: ['findPlaces', 'publishPlan', 'askMultipleChoice', 'showSuggestedStops', 'showRouteOptions'] }
       },
       abortSignal: req.signal,
     })

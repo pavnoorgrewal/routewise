@@ -21,7 +21,7 @@ const inspirations = [
     icon: Waves,
     from: "San Francisco, CA",
     to: "Monterey, CA",
-    image: "/images/scenic-route.jpg",
+    image: "/images/monterey-bixby-bridge.jpg",
     title: "Take the coast.",
     caption: "Ocean air. A different pace.",
     label: "San Francisco → Monterey",
@@ -122,7 +122,7 @@ export function Hero() {
                   src={item.image}
                   alt={
                     index === 0
-                      ? "A winding road along a sunlit coastline"
+                      ? "Bixby Creek Bridge crossing the coastal hills near Monterey"
                       : "A winding road through snow-covered trees on the way to Lake Tahoe"
                   }
                   fill
