@@ -8,9 +8,9 @@ import { AssistantLauncher } from "@/components/assistant-launcher";
 import { Reveal } from "@/components/reveal";
 
 export const metadata: Metadata = {
-  title: "The Story — Routewise",
+  title: "Why use Routewise — EV trips made simple",
   description:
-    "A little planning. A lot of possibility. The story behind Routewise, founded by Pavnoor Singh Grewal.",
+    "Plan an EV trip around your range and your pace. Find named stops, adjust your itinerary, and open your route in Google Maps.",
 };
 
 export default function ProposalPage() {
@@ -19,20 +19,28 @@ export default function ProposalPage() {
       <Navbar />
       <section className="mx-auto max-w-7xl px-5 pb-12 pt-36 md:px-10 md:pb-20 md:pt-44">
         <p className="eyebrow entrance">
-          <span className="h-1.5 w-1.5 rounded-full bg-brand" /> The Story
+          <span className="h-1.5 w-1.5 rounded-full bg-brand" /> Why use Routewise
         </p>
         <div className="mt-7 grid gap-8 lg:grid-cols-[1.5fr_1fr] lg:items-end">
-          <h1 className="entrance text-[clamp(3.6rem,7.5vw,7rem)] font-medium leading-[1.02] tracking-[-0.065em] [animation-delay:80ms]">
-            Made for
+          <h1 className="entrance text-[clamp(2.8rem,7.5vw,7rem)] font-medium leading-[1.02] tracking-[-0.065em] [animation-delay:80ms]">
+            Less planning.
             <br />
             <span className="font-serif font-normal italic text-brand">
-              the journey.
+              More going.
             </span>
           </h1>
-          <p className="entrance max-w-sm text-lg leading-8 text-muted-foreground [animation-delay:160ms]">
-            Because the best part of a road trip shouldn’t be getting the
-            planning over with.
-          </p>
+          <div className="entrance [animation-delay:160ms]">
+            <p className="max-w-sm text-lg leading-8 text-muted-foreground">
+              An EV trip that fits your range, your pace, and your plans.
+            </p>
+            <Link
+              href="/chat"
+              className="button-dark mt-6 inline-flex items-center gap-3 px-5 py-3 text-sm"
+            >
+              Plan your trip{" "}
+              <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
+            </Link>
+          </div>
         </div>
       </section>
       <div className="story-panorama relative mx-3 h-[360px] overflow-hidden rounded-[28px] sm:mx-6 md:h-[520px] md:rounded-[36px]">
@@ -58,54 +66,47 @@ export default function ProposalPage() {
       <section className="mx-auto max-w-7xl px-5 py-24 md:px-10 md:py-32">
         <Reveal className="grid gap-10 md:grid-cols-[0.7fr_1.3fr]">
           <div>
-            <p className="eyebrow">Why choose us</p>
+            <p className="eyebrow">A simpler way to go</p>
             <span className="mt-7 inline-flex h-14 w-14 items-center justify-center rounded-2xl border border-border bg-white">
               <Route className="h-6 w-6 text-brand" strokeWidth={1.5} />
             </span>
           </div>
           <div>
             <h2 className="section-heading">
-              The trip starts long
+              Your whole trip.
               <br />
-              before the drive.
+              One conversation.
             </h2>
             <p className="mt-6 max-w-xl text-base leading-8 text-muted-foreground">
-              A route in one tab. Charging stations in another. A growing list
-              of places you might stop. Somewhere along the way, the excitement
-              turns into logistics.
-            </p>
-            <p className="mt-4 max-w-xl text-base leading-8 text-muted-foreground">
-              Routewise brings those pieces into one conversation. Tell us where
-              you’re going, what your EV can do, and what makes a trip feel like
-              yours. We’ll help you put a plan together, with room to change
-              your mind.
+              Tell us where you’re going and your EV’s range. Routewise brings
+              the drive, charging stops, and places to visit into one plan.
             </p>
           </div>
         </Reveal>
         <div className="my-20 h-px bg-border md:my-28" />
         <Reveal>
-          <p className="eyebrow">Features</p>
-          <h2 className="section-heading mt-5">Thoughtful by design.</h2>
+          <p className="eyebrow">Built around you</p>
+          <h2 className="section-heading mt-5">Your trip. Your way.</h2>
         </Reveal>
         <div className="mt-12 grid gap-10 md:grid-cols-3">
           {[
             {
               icon: Compass,
-              title: "Your pace. Your priorities.",
+              title: "Stop on your terms.",
               description:
-                "Take the scenic route, keep it direct, or add a few places worth stopping for. The choices belong to you.",
+                "Find a restaurant, park, or great view. Or skip the extra stops and head straight there.",
             },
             {
               icon: Zap,
-              title: "Electric from the start.",
+              title: "Charging, considered.",
               description:
-                "EV range is part of the conversation from the beginning, so charging can be part of the plan.",
+                "Your EV’s range helps shape the route, with suggested charging stops when you need them.",
             },
             {
               icon: Sparkles,
-              title: "A conversation that moves.",
+              title: "Easy to change.",
               description:
-                "Ask a question, change a destination, or rethink a stop. Keep shaping the journey as your plans evolve.",
+                "New destination? Different mood? Adjust your trip with a message and keep the conversation going.",
             },
           ].map((item, index) => (
             <Reveal
@@ -136,22 +137,21 @@ export default function ProposalPage() {
             />
           </Reveal>
           <Reveal delay={100} className="lg:pl-10">
-            <p className="eyebrow">For the everyday explorer</p>
+            <p className="eyebrow">From plan to pavement</p>
             <h2 className="section-heading mt-6">
-              A weekend away.
-              <br />A new point of view.
+              Know your stops.
+              <br />See the whole route.
             </h2>
             <p className="mt-6 max-w-md text-base leading-8 text-muted-foreground">
-              For EV drivers thinking beyond the next charge. For curious
-              travelers who want to find something along the way. And for anyone
-              who would rather spend their time on the road than planning it.
+              Get place names and street addresses, then open your planned
+              stops in Google Maps. Your next step is easy to find.
             </p>
             <Link
               href="/chat"
-              className="mt-8 inline-flex items-center gap-4 rounded-full text-sm font-medium"
+              className="button-dark mt-8 inline-flex items-center gap-3 px-5 py-3 text-sm"
             >
-              Find your next journey{" "}
-              <ArrowUpRight className="h-4 w-4 text-brand" />
+              Plan your trip{" "}
+              <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
             </Link>
           </Reveal>
         </div>

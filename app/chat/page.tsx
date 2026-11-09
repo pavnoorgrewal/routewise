@@ -458,7 +458,7 @@ function ChatPageInner() {
               href="/proposal"
               className="text-xs text-muted-foreground transition-colors hover:text-foreground"
             >
-              The Story
+              Why use Routewise
             </Link>
           </div>
         </nav>

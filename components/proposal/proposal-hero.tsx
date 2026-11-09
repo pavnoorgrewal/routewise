@@ -3,9 +3,9 @@ import { PageIntro } from "@/components/page-intro";
 export function ProposalHero() {
   return (
     <PageIntro
-      eyebrow="The Story"
-      title="Made for the journey."
-      description="A simpler way to plan electric road trips, with thoughtful stops, scenic routes, and more room to explore."
+      eyebrow="Why use Routewise"
+      title="Less planning. More going."
+      description="An EV trip that fits your range, your pace, and your plans."
     />
   );
 }

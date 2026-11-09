@@ -19,7 +19,7 @@ export function Navbar() {
             aria-current={pathname === "/proposal" ? "page" : undefined}
             className="nav-story text-xs font-medium text-muted-foreground transition-colors hover:text-foreground sm:text-sm"
           >
-            The Story
+            Why use Routewise
           </Link>
         </div>
       </nav>
