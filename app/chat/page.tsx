@@ -7,7 +7,6 @@ import { useChat } from "@ai-sdk/react";
 import {
   DefaultChatTransport,
   UIMessage,
-  lastAssistantMessageIsCompleteWithToolCalls,
 } from "ai";
 import {
   ArrowUp,
@@ -24,6 +23,8 @@ import {
 } from "lucide-react";
 
 import { Brand } from "@/components/brand";
+import { shouldContinueAfterChoice } from "@/lib/chat-auto-continue";
+import { LoadingIndicator } from "@/components/chat/loading-indicator";
 import { MultipleChoice } from "@/components/chat/multiple-choice";
 import { RouteStopList } from "@/components/chat/route-stop";
 import { RouteSummary } from "@/components/chat/route-summary";
@@ -388,7 +389,7 @@ function ChatPageInner() {
     addToolOutput,
   } = useChat({
     transport: new DefaultChatTransport({ api: "/api/chat" }),
-    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
+    sendAutomaticallyWhen: shouldContinueAfterChoice,
   });
 
   useEffect(() => {
@@ -533,8 +534,6 @@ function ChatPageInner() {
 
           {messages.map((message, index) => {
             const isUser = message.role === "user";
-            const isLastMessage = index === messages.length - 1;
-            const isStreaming = isLoading && isLastMessage && !isUser;
 
             return (
               <div
@@ -651,14 +650,6 @@ function ChatPageInner() {
                         return null;
                       })}
 
-                    {/* Streaming indicator */}
-                    {isStreaming && (
-                      <div className="flex items-center gap-1.5 text-muted-foreground">
-                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-muted-foreground animate-bounce [animation-delay:-0.3s]" />
-                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-muted-foreground animate-bounce [animation-delay:-0.15s]" />
-                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-muted-foreground animate-bounce" />
-                      </div>
-                    )}
 
                     {!isLoading && (
                       <div className="chat-actions flex gap-1">
@@ -678,6 +669,7 @@ function ChatPageInner() {
               </div>
             );
           })}
+          {isLoading && <LoadingIndicator />}
           {error && (
             <div
               role="alert"
