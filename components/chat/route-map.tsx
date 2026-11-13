@@ -8,14 +8,7 @@ type RouteMapProps = {
 
 export function RouteMap({ origin, destination, stops }: RouteMapProps) {
   const waypoints = stops
-    .map((stop) => {
-      const name = stop.name?.trim();
-      const location = stop.location?.trim();
-      if (!name) return location;
-      if (!location || location.toLowerCase().includes(name.toLowerCase()))
-        return location || name;
-      return `${name}, ${location}`;
-    })
+    .map((stop) => stop.location?.trim() || stop.name?.trim())
     .filter(Boolean);
 
   const directions = new URLSearchParams({

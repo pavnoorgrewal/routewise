@@ -278,7 +278,7 @@ function ToolPartRenderer({
     return (
       <SuggestedStops
         title={p.input?.title}
-        chips={p.input?.chips ?? []}
+        chips={p.input?.chips.filter((chip) => !/^no extra stops$/i.test(chip.label.trim())) ?? []}
         multiSelect={p.input?.multiSelect ?? true}
         state={p.state === "output-error" ? "input-available" : p.state}
         selectedIds={p.output?.map((o) => o.id)}
@@ -664,6 +664,17 @@ function ChatPageInner() {
                           <RotateCcw className="h-3.5 w-3.5" />
                         </Button>
                       </div>
+                    )}
+                    {!isLoading && message.parts?.some((part) =>
+                      part.type === "tool-publishPlan" && part.state === "output-available" &&
+                      (part.output as { valid?: boolean } | undefined)?.valid === false
+                    ) && !message.parts?.some((part) =>
+                      part.type === "tool-publishPlan" && part.state === "output-available" &&
+                      (part.output as { valid?: boolean } | undefined)?.valid === true
+                    ) && (
+                      <p role="alert" className="text-sm text-muted-foreground">
+                        I couldn’t verify every requested stop. Try a more specific place name or city, and I’ll update the route.
+                      </p>
                     )}
                   </div>
                 )}
