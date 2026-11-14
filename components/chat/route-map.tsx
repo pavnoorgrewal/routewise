@@ -8,14 +8,7 @@ type RouteMapProps = {
 
 export function RouteMap({ origin, destination, stops }: RouteMapProps) {
   const waypoints = stops
-    .map((stop) => {
-      const name = stop.name?.trim();
-      const location = stop.location?.trim();
-      if (!name) return location;
-      if (!location || location.toLowerCase().includes(name.toLowerCase()))
-        return location || name;
-      return `${name}, ${location}`;
-    })
+    .map((stop) => stop.location?.trim() || stop.name?.trim())
     .filter(Boolean);
 
   const directions = new URLSearchParams({
@@ -26,6 +19,20 @@ export function RouteMap({ origin, destination, stops }: RouteMapProps) {
   });
   if (waypoints.length)
     directions.set("waypoints", waypoints.slice(0, 9).join("|"));
+
+  const points = [origin, ...waypoints, destination];
+  const mobileLegs: string[] = [];
+  for (let start = 0; start < points.length - 1; start += 4) {
+    const end = Math.min(start + 4, points.length - 1);
+    const leg = new URLSearchParams({
+      api: "1",
+      origin: points[start],
+      destination: points[end],
+      travelmode: "driving",
+    });
+    if (end - start > 1) leg.set("waypoints", points.slice(start + 1, end).join("|"));
+    mobileLegs.push(`https://www.google.com/maps/dir/?${leg.toString()}`);
+  }
 
   const embedKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_EMBED_KEY?.trim();
   const embed = new URLSearchParams({
@@ -72,6 +79,18 @@ export function RouteMap({ origin, destination, stops }: RouteMapProps) {
         Open full route in Google Maps
         <ExternalLink aria-hidden="true" className="h-3.5 w-3.5" />
       </a>
+      {waypoints.length > 3 && (
+        <div className="mt-4 text-xs text-muted-foreground">
+          <p>On a phone, open these connected legs to see every stop:</p>
+          <div className="mt-2 flex flex-wrap gap-3">
+            {mobileLegs.map((url, index) => (
+              <a key={url} href={url} target="_blank" rel="noopener noreferrer" className="font-medium text-foreground underline underline-offset-4">
+                Leg {index + 1} of {mobileLegs.length}
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
