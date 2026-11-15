@@ -20,7 +20,21 @@ export interface SuggestedStopChip {
   id: string
   label: string
   sublabel?: string | null
+  location?: string | null
   category?: RouteStopCategory | null
+}
+
+const stopTypes: Partial<Record<RouteStopCategory, string>> = {
+  food: 'Restaurant', coffee: 'Coffee shop', fuel: 'EV charging', attraction: 'Attraction',
+  lodging: 'Lodging', shopping: 'Shop', scenic: 'Scenic stop', entertainment: 'Entertainment',
+  default: 'Place',
+}
+
+function chipDetails(chip: SuggestedStopChip): string | null {
+  if (!chip.location) return chip.sublabel ?? null
+  const parts = chip.location.split(',').map((part) => part.trim())
+  if (parts.length < 3) return `${stopTypes[chip.category ?? 'default'] ?? 'Place'} · ${chip.location}`
+  return `${stopTypes[chip.category ?? 'default'] ?? 'Place'} · ${parts.slice(-2).join(', ')}`
 }
 
 export interface SuggestedStopsProps {
@@ -123,6 +137,7 @@ export function SuggestedStops({
               >
                 {cfg.icon}
                 {chip.label}
+                {chipDetails(chip) && <span className="opacity-75 font-normal">{chipDetails(chip)}</span>}
               </span>
             )
           })}
@@ -164,8 +179,8 @@ export function SuggestedStops({
             >
               {cfg.icon}
               {chip.label}
-              {chip.sublabel && (
-                <span className="opacity-60 font-normal">{chip.sublabel}</span>
+              {chipDetails(chip) && (
+                <span className="opacity-70 font-normal">{chipDetails(chip)}</span>
               )}
             </button>
           )

@@ -259,6 +259,7 @@ function ToolPartRenderer({
           id: string;
           label: string;
           sublabel?: string | null;
+          location?: string | null;
           category?:
             | "food"
             | "coffee"
