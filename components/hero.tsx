@@ -45,8 +45,11 @@ type SavedLocation = {
   longitude: number;
   accuracy: number;
   address: string;
+  approximate: boolean;
   savedAt: number;
 };
+
+const locationStorageKey = "routewise:last-location-v2";
 
 function distanceMeters(a: { latitude: number; longitude: number }, b: { latitude: number; longitude: number }) {
   const radians = Math.PI / 180;
@@ -88,46 +91,52 @@ export function Hero() {
     setLocationNotice("");
     navigator.geolocation.getCurrentPosition(
       async ({ coords }) => {
-        const coordinates = `${coords.latitude.toFixed(6)}, ${coords.longitude.toFixed(6)}`;
         let address: string | null = null;
-        const accurate = Number.isFinite(coords.accuracy) && coords.accuracy <= 35;
-        if (accurate) {
+        let approximate = false;
+        try {
+          const saved = JSON.parse(sessionStorage.getItem(locationStorageKey) ?? "null") as SavedLocation | null;
+          if (saved?.address && Date.now() - saved.savedAt < 15 * 60 * 1000
+            && distanceMeters(saved, coords) <= Math.max(25, Math.min(75, saved.accuracy + coords.accuracy))) {
+            address = saved.address;
+            approximate = saved.approximate;
+          }
+        } catch {
+          // Location search still works when session storage is unavailable.
+        }
+        if (!address) {
           try {
-            const saved = JSON.parse(sessionStorage.getItem("routewise:last-location") ?? "null") as SavedLocation | null;
-            if (saved?.address && Date.now() - saved.savedAt < 15 * 60 * 1000
-              && saved.accuracy <= 35
-              && distanceMeters(saved, coords) <= Math.max(25, Math.min(50, saved.accuracy + coords.accuracy))) {
-              address = saved.address;
+            const response = await fetch("/api/current-location", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ latitude: coords.latitude, longitude: coords.longitude }),
+            });
+            if (response.ok) {
+              const result = await response.json() as { address?: string | null; approximate?: boolean };
+              address = result.address ?? null;
+              approximate = Boolean(result.approximate);
+              if (address) {
+                try {
+                  sessionStorage.setItem(locationStorageKey, JSON.stringify({
+                    latitude: coords.latitude, longitude: coords.longitude,
+                    accuracy: coords.accuracy, address, approximate, savedAt: Date.now(),
+                  } satisfies SavedLocation));
+                } catch {
+                  // The address remains available even when storage is disabled.
+                }
+              }
             }
           } catch {
-            // Location search still works when session storage is unavailable.
-          }
-          if (!address) {
-            try {
-              const response = await fetch("/api/current-location", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ latitude: coords.latitude, longitude: coords.longitude }),
-              });
-              if (response.ok) {
-                const result = await response.json() as { address?: string | null };
-                address = result.address ?? null;
-                if (address) sessionStorage.setItem("routewise:last-location", JSON.stringify({
-                  latitude: coords.latitude, longitude: coords.longitude,
-                  accuracy: coords.accuracy, address, savedAt: Date.now(),
-                } satisfies SavedLocation));
-              }
-            } catch {
-              // Coordinates remain usable when address lookup is unavailable.
-            }
+            // Let the traveler enter an address if lookup is unavailable.
           }
         }
         if (fromRef.current === valueAtClick) {
-          updateFrom(address ?? coordinates);
-          setOriginCoords({ latitude: coords.latitude, longitude: coords.longitude });
-          if (!address) setLocationNotice(accurate
-            ? "Using your coordinates because a street address was unavailable. You can edit the starting point."
-            : "Your device gave an approximate location, so we're using coordinates instead of guessing an address. You can edit the starting point.");
+          if (address) {
+            updateFrom(address);
+            setOriginCoords({ latitude: coords.latitude, longitude: coords.longitude });
+            if (coords.accuracy > 35 || approximate) setLocationNotice("Approximate address — please check it before planning.");
+          } else {
+            setLocationNotice("We couldn’t find a street address. Please enter your starting address.");
+          }
         }
         setLocating(false);
       },

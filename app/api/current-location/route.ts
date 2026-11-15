@@ -4,15 +4,20 @@ type ReverseResult = {
   address?: {
     house_number?: string
     road?: string
+    pedestrian?: string
+    residential?: string
     city?: string
     town?: string
     village?: string
+    hamlet?: string
     state?: string
     postcode?: string
   }
 }
 
-const cache = new Map<string, { address: string | null; expiresAt: number }>()
+type AddressResult = { address: string | null; approximate: boolean }
+
+const cache = new Map<string, AddressResult & { expiresAt: number }>()
 let queue = Promise.resolve()
 let lastRequestAt = 0
 
@@ -36,7 +41,7 @@ export async function POST(request: Request) {
 
   const key = `${latitude.toFixed(4)},${longitude.toFixed(4)}`
   const cached = cache.get(key)
-  if (cached && cached.expiresAt > Date.now()) return NextResponse.json({ address: cached.address })
+  if (cached && cached.expiresAt > Date.now()) return NextResponse.json({ address: cached.address, approximate: cached.approximate })
 
   const task = queue.then(async () => {
     const delay = Math.max(0, lastRequestAt + 1100 - Date.now())
@@ -56,21 +61,23 @@ export async function POST(request: Request) {
       cache: 'no-store',
     })
     if (!response.ok) throw new Error('Reverse geocoding unavailable')
-    const result = await response.json() as ReverseResult
-    const parts = result.address
-    const city = parts?.city ?? parts?.town ?? parts?.village
-    const address = parts?.house_number && parts.road && city && parts.state
-      ? `${parts.house_number} ${parts.road}, ${city}, ${parts.state}${parts.postcode ? ` ${parts.postcode}` : ''}`
+    const reverse = await response.json() as ReverseResult
+    const parts = reverse.address
+    const city = parts?.city ?? parts?.town ?? parts?.village ?? parts?.hamlet
+    const road = parts?.road ?? parts?.pedestrian ?? parts?.residential
+    const address = road && city && parts?.state
+      ? `${parts.house_number ? `${parts.house_number} ` : ''}${road}, ${city}, ${parts.state}${parts.postcode ? ` ${parts.postcode}` : ''}`
       : null
+    const result: AddressResult = { address, approximate: !parts?.house_number }
     if (cache.size > 300) cache.delete(cache.keys().next().value!)
-    cache.set(key, { address, expiresAt: Date.now() + 24 * 60 * 60 * 1000 })
-    return address
+    cache.set(key, { ...result, expiresAt: Date.now() + 24 * 60 * 60 * 1000 })
+    return result
   })
   queue = task.then(() => undefined, () => undefined)
 
   try {
-    return NextResponse.json({ address: await task })
+    return NextResponse.json(await task)
   } catch {
-    return NextResponse.json({ address: null }, { status: 502 })
+    return NextResponse.json({ address: null, approximate: true }, { status: 502 })
   }
 }
