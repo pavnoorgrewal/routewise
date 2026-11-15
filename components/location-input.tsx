@@ -15,9 +15,11 @@ type LocationInputProps = {
   onChange: (value: string) => void
   placeholder: string
   label: string
+  searchOrigin?: string
+  searchOriginCoords?: { latitude: number; longitude: number } | null
 }
 
-export function LocationInput({ value, onChange, placeholder, label }: LocationInputProps) {
+export function LocationInput({ value, onChange, placeholder, label, searchOrigin, searchOriginCoords }: LocationInputProps) {
   const listId = useId()
   const [open, setOpen] = useState(false)
   const [suggestions, setSuggestions] = useState<Suggestion[]>([])
@@ -41,7 +43,14 @@ export function LocationInput({ value, onChange, placeholder, label }: LocationI
 
     const timer = window.setTimeout(async () => {
       try {
-        const response = await fetch(`/api/locations?q=${encodeURIComponent(value.trim())}`, {
+        const params = new URLSearchParams({ q: value.trim() })
+        if (searchOriginCoords) {
+          params.set('lat', String(searchOriginCoords.latitude))
+          params.set('lon', String(searchOriginCoords.longitude))
+        } else if (searchOrigin?.trim()) {
+          params.set('origin', searchOrigin.trim())
+        }
+        const response = await fetch(`/api/locations?${params}`, {
           signal: controller.signal,
         })
         if (!response.ok) throw new Error('Location search failed')
@@ -57,7 +66,7 @@ export function LocationInput({ value, onChange, placeholder, label }: LocationI
       window.clearTimeout(timer)
       controller.abort()
     }
-  }, [value, open])
+  }, [value, open, searchOrigin, searchOriginCoords])
 
   function select(suggestion: Suggestion) {
     onChange(suggestion.value)

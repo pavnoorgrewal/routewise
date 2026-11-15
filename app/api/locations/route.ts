@@ -10,6 +10,7 @@ type Suggestion = {
 }
 
 type PhotonFeature = {
+  geometry?: { coordinates?: [number, number] }
   properties: {
     name?: string
     housenumber?: string
@@ -22,6 +23,40 @@ type PhotonFeature = {
     type?: string
     osm_key?: string
   }
+}
+
+type Coordinates = { latitude: number; longitude: number }
+
+const originCache = new Map<string, { coordinates: Coordinates | null; expiresAt: number }>()
+
+async function resolveOrigin(origin: string): Promise<Coordinates | null> {
+  if (!origin.trim()) return null
+  const coordinateMatch = origin.match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/)
+  if (coordinateMatch) {
+    const latitude = Number(coordinateMatch[1])
+    const longitude = Number(coordinateMatch[2])
+    if (Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180) return { latitude, longitude }
+  }
+
+  const key = normalize(origin)
+  const cached = originCache.get(key)
+  if (cached && cached.expiresAt > Date.now()) return cached.coordinates
+
+  const url = new URL('https://photon.komoot.io/api/')
+  url.searchParams.set('q', origin)
+  url.searchParams.set('countrycode', 'US')
+  url.searchParams.set('limit', '1')
+  const response = await fetch(url, { signal: AbortSignal.timeout(3500) })
+  if (!response.ok) return null
+  const data = await response.json() as { features?: PhotonFeature[] }
+  const [longitude, latitude] = data.features?.[0]?.geometry?.coordinates ?? []
+  const coordinates = typeof latitude === 'number' && typeof longitude === 'number'
+    && Number.isFinite(latitude) && Number.isFinite(longitude)
+    ? { latitude, longitude }
+    : null
+  if (originCache.size >= 200) originCache.delete(originCache.keys().next().value!)
+  originCache.set(key, { coordinates, expiresAt: Date.now() + 10 * 60 * 1000 })
+  return coordinates
 }
 
 type CensusMatch = { matchedAddress?: string }
@@ -92,12 +127,18 @@ async function searchCensus(query: string): Promise<Suggestion[]> {
   })
 }
 
-async function searchPhoton(query: string): Promise<Suggestion[]> {
+async function searchPhoton(query: string, origin?: Coordinates | null): Promise<Suggestion[]> {
   const url = new URL('https://photon.komoot.io/api/')
   url.searchParams.set('q', query)
   url.searchParams.set('countrycode', 'US')
   url.searchParams.set('limit', '8')
   url.searchParams.set('lang', 'en')
+  if (origin) {
+    url.searchParams.set('lat', String(origin.latitude))
+    url.searchParams.set('lon', String(origin.longitude))
+    url.searchParams.set('zoom', '12')
+    url.searchParams.set('location_bias_scale', '0.1')
+  }
 
   const response = await fetch(url, {
     signal: AbortSignal.timeout(3500),
@@ -164,6 +205,15 @@ export async function GET(request: NextRequest) {
 
   if (query.length < 2) return NextResponse.json([])
 
+  const latitude = Number(request.nextUrl.searchParams.get('lat'))
+  const longitude = Number(request.nextUrl.searchParams.get('lon'))
+  const hasCoordinates = request.nextUrl.searchParams.has('lat') && request.nextUrl.searchParams.has('lon')
+    && Number.isFinite(latitude) && Number.isFinite(longitude)
+    && Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180
+  const origin = hasCoordinates
+    ? { latitude, longitude }
+    : await resolveOrigin(request.nextUrl.searchParams.get('origin')?.trim().slice(0, 160) ?? '').catch(() => null)
+
   const airportCodes = searchable.filter(({ code }) => code === query)
   if (airportCodes.length) {
     return NextResponse.json(airportCodes.map(({ location }) => formatLocation(location)))
@@ -190,17 +240,18 @@ export async function GET(request: NextRequest) {
   const local = matches.slice(0, 8).map(({ location }) => formatLocation(location))
   if (query.length < 3) return NextResponse.json(local)
 
-  const cached = remoteCache.get(query)
+  const cacheKey = `${query}:${origin ? `${origin.latitude.toFixed(2)},${origin.longitude.toFixed(2)}` : ''}`
+  const cached = remoteCache.get(cacheKey)
   let remote = cached && cached.expiresAt > Date.now() ? cached.suggestions : undefined
   if (!remote) {
     const addressQuery = /^\d+\s+/.test(rawQuery) && rawQuery.trim().split(/[\s,]+/).length >= 3
     const [census, photon] = await Promise.all([
       addressQuery ? searchCensus(rawQuery).catch(() => []) : Promise.resolve([]),
-      searchPhoton(rawQuery).catch(() => []),
+      searchPhoton(rawQuery, origin).catch(() => []),
     ])
     remote = [...census, ...photon]
     if (remoteCache.size >= 200) remoteCache.delete(remoteCache.keys().next().value!)
-    remoteCache.set(query, { suggestions: remote, expiresAt: Date.now() + 5 * 60 * 1000 })
+    remoteCache.set(cacheKey, { suggestions: remote, expiresAt: Date.now() + 5 * 60 * 1000 })
   }
 
   const ordered = /^\d/.test(rawQuery) ? [...remote, ...local] : [...local, ...remote]
