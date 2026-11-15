@@ -47,7 +47,7 @@ export function Hero() {
   const [to, setTo] = useState("");
   const [locating, setLocating] = useState(false);
   const [locationNotice, setLocationNotice] = useState("");
-  const [usedOpenStreetMap, setUsedOpenStreetMap] = useState(false);
+  const [originCoords, setOriginCoords] = useState<{ latitude: number; longitude: number } | null>(null);
   const [scene, setScene] = useState(0);
   const inspiration = inspirations[scene];
   const canSubmit = from.trim().length > 0 && to.trim().length > 0;
@@ -56,7 +56,7 @@ export function Hero() {
     fromRef.current = value;
     setFrom(value);
     setLocationNotice("");
-    setUsedOpenStreetMap(false);
+    setOriginCoords(null);
   }
 
   function useCurrentLocation() {
@@ -87,7 +87,7 @@ export function Hero() {
         }
         if (fromRef.current === valueAtClick) {
           updateFrom(address ?? coordinates);
-          setUsedOpenStreetMap(Boolean(address));
+          setOriginCoords({ latitude: coords.latitude, longitude: coords.longitude });
           if (!address) setLocationNotice("Using your coordinates because a street address was unavailable.");
         }
         setLocating(false);
@@ -156,12 +156,9 @@ export function Hero() {
                 label="Starting location"
               />
             </div>
-            {(locationNotice || usedOpenStreetMap) && (
-              <p role={locationNotice ? "status" : undefined} className="px-4 pb-2 text-xs text-muted-foreground">
+            {locationNotice && (
+              <p role="status" className="px-4 pb-2 text-xs text-muted-foreground">
                 {locationNotice}
-                {usedOpenStreetMap && (
-                  <>Address © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">OpenStreetMap contributors</a></>
-                )}
               </p>
             )}
             <div className="mx-3 h-px bg-border/70" />
@@ -175,6 +172,8 @@ export function Hero() {
                 onChange={setTo}
                 placeholder="Where would you like to go?"
                 label="Destination"
+                searchOrigin={from}
+                searchOriginCoords={originCoords}
               />
               <button
                 type="submit"
