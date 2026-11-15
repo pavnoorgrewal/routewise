@@ -235,7 +235,7 @@ export function SuggestedStops({
               <span className="opacity-70">({selectionCount})</span>
             )}
           </button>
-          <p className="text-xs text-muted-foreground">Pick as many as you like</p>
+          {chips.length > 0 && <p className="text-xs text-muted-foreground">Pick as many as you like</p>}
         </div>
       )}
       {isSelectable && (
