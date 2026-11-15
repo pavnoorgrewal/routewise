@@ -40,6 +40,23 @@ const inspirations = [
   },
 ];
 
+type SavedLocation = {
+  latitude: number;
+  longitude: number;
+  accuracy: number;
+  address: string;
+  savedAt: number;
+};
+
+function distanceMeters(a: { latitude: number; longitude: number }, b: { latitude: number; longitude: number }) {
+  const radians = Math.PI / 180;
+  const north = (b.latitude - a.latitude) * radians;
+  const east = (b.longitude - a.longitude) * radians;
+  const arc = Math.sin(north / 2) ** 2
+    + Math.cos(a.latitude * radians) * Math.cos(b.latitude * radians) * Math.sin(east / 2) ** 2;
+  return 12742000 * Math.asin(Math.sqrt(arc));
+}
+
 export function Hero() {
   const router = useRouter();
   const [from, setFrom] = useState("");
@@ -48,9 +65,10 @@ export function Hero() {
   const [locating, setLocating] = useState(false);
   const [locationNotice, setLocationNotice] = useState("");
   const [originCoords, setOriginCoords] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [evRangeMiles, setEvRangeMiles] = useState<number | null>(null);
   const [scene, setScene] = useState(0);
   const inspiration = inspirations[scene];
-  const canSubmit = from.trim().length > 0 && to.trim().length > 0;
+  const canSubmit = from.trim().length > 0 && to.trim().length > 0 && evRangeMiles !== null;
 
   function updateFrom(value: string) {
     fromRef.current = value;
@@ -72,23 +90,44 @@ export function Hero() {
       async ({ coords }) => {
         const coordinates = `${coords.latitude.toFixed(6)}, ${coords.longitude.toFixed(6)}`;
         let address: string | null = null;
-        try {
-          const response = await fetch("/api/current-location", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ latitude: coords.latitude, longitude: coords.longitude }),
-          });
-          if (response.ok) {
-            const result = await response.json() as { address?: string | null };
-            address = result.address ?? null;
+        const accurate = Number.isFinite(coords.accuracy) && coords.accuracy <= 35;
+        if (accurate) {
+          try {
+            const saved = JSON.parse(sessionStorage.getItem("routewise:last-location") ?? "null") as SavedLocation | null;
+            if (saved?.address && Date.now() - saved.savedAt < 15 * 60 * 1000
+              && saved.accuracy <= 35
+              && distanceMeters(saved, coords) <= Math.max(25, Math.min(50, saved.accuracy + coords.accuracy))) {
+              address = saved.address;
+            }
+          } catch {
+            // Location search still works when session storage is unavailable.
           }
-        } catch {
-          // Coordinates still provide an exact starting point when address lookup is unavailable.
+          if (!address) {
+            try {
+              const response = await fetch("/api/current-location", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ latitude: coords.latitude, longitude: coords.longitude }),
+              });
+              if (response.ok) {
+                const result = await response.json() as { address?: string | null };
+                address = result.address ?? null;
+                if (address) sessionStorage.setItem("routewise:last-location", JSON.stringify({
+                  latitude: coords.latitude, longitude: coords.longitude,
+                  accuracy: coords.accuracy, address, savedAt: Date.now(),
+                } satisfies SavedLocation));
+              }
+            } catch {
+              // Coordinates remain usable when address lookup is unavailable.
+            }
+          }
         }
         if (fromRef.current === valueAtClick) {
           updateFrom(address ?? coordinates);
           setOriginCoords({ latitude: coords.latitude, longitude: coords.longitude });
-          if (!address) setLocationNotice("Using your coordinates because a street address was unavailable.");
+          if (!address) setLocationNotice(accurate
+            ? "Using your coordinates because a street address was unavailable. You can edit the starting point."
+            : "Your device gave an approximate location, so we're using coordinates instead of guessing an address. You can edit the starting point.");
         }
         setLocating(false);
       },
@@ -98,7 +137,7 @@ export function Hero() {
           ? "Location access was denied. Allow it in your browser settings or enter a starting point."
           : "We couldn’t get your location. Try again or enter a starting point.");
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
     );
   }
 
@@ -124,7 +163,7 @@ export function Hero() {
               event.preventDefault();
               if (canSubmit)
                 router.push(
-                  `/chat?message=${encodeURIComponent(`Help me plan a trip from ${from.trim()} to ${to.trim()}`)}`,
+                  `/chat?message=${encodeURIComponent(`Help me plan a trip from ${from.trim()} to ${to.trim()}. My EV range is ${evRangeMiles} miles.`)}`,
                 );
             }}
             className="trip-form entrance relative mt-10 max-w-[28rem] rounded-[22px] border border-black/[0.08] bg-white p-2 shadow-[0_4px_6px_-4px_#0000000a,0_20px_50px_-25px_#38302125] [animation-delay:140ms]"
@@ -183,6 +222,29 @@ export function Hero() {
               >
                 <ArrowRight className="h-[18px] w-[18px]" />
               </button>
+            </div>
+            <div className="mx-3 h-px bg-border/70" />
+            <div className="px-4 pb-3 pt-4">
+              <div className="flex items-center justify-between gap-3">
+                <label htmlFor="ev-range" className="text-xs font-medium text-foreground">Your EV’s full-charge range</label>
+                <span className="rounded-full bg-brand-soft px-2.5 py-1 text-xs font-semibold tabular-nums text-brand">
+                  {evRangeMiles === null ? "Set range" : `${evRangeMiles} miles`}
+                </span>
+              </div>
+              <input
+                id="ev-range"
+                type="range"
+                min={110}
+                max={550}
+                step={10}
+                value={evRangeMiles ?? 330}
+                onChange={(event) => setEvRangeMiles(Number(event.target.value))}
+                className="ev-range-slider mt-4 w-full"
+                style={{ background: `linear-gradient(to right, #b94f2a 0%, #b94f2a ${((evRangeMiles ?? 330) - 110) / 440 * 100}%, #ece7e0 ${((evRangeMiles ?? 330) - 110) / 440 * 100}%, #ece7e0 100%)` }}
+              />
+              <div className="mt-1 flex justify-between text-[10px] tabular-nums text-muted-foreground">
+                <span>110 mi</span><span>Drag to choose</span><span>550 mi</span>
+              </div>
             </div>
           </form>
         </div>
