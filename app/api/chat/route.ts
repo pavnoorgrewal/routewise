@@ -107,7 +107,7 @@ function modelHistory(messages: ChatMessage[]): ChatMessage[] {
         return [{ type: 'text' as const, text: `I asked: ${part.input.question} Options: ${part.input.options.map((option) => option.label).join(', ')}.` }]
       }
       if (part.type === 'tool-showSuggestedStops' && part.state === 'input-available') {
-        return [{ type: 'text' as const, text: `I offered optional stops: ${part.input.chips.map((chip) => chip.label).join(', ')}. The traveler can also choose no extra stops.` }]
+        return [{ type: 'text' as const, text: `I offered optional stops: ${part.input.chips.map((chip) => `${chip.label} (${chip.category ?? 'place'}, ${chip.location ?? chip.sublabel ?? 'location unknown'})`).join('; ')}. The traveler can also choose no extra stops.` }]
       }
       return [part]
     }),
@@ -120,6 +120,7 @@ const verifiedAddresses = new Map<string, number>()
 type PlanPreferences = {
   pace: 'relaxed' | 'moderate' | 'flexible' | 'fast' | null
   requestedNames: string[]
+  selectedPlaces: { name: string; location: string; category: string }[]
   categories: string[]
   noExtraStops: boolean
   hasStopChoice: boolean
@@ -145,12 +146,16 @@ function planPreferences(messages: ChatMessage[]): PlanPreferences {
     ? choice.output : []
   const chipCategories = choice?.type === 'tool-showSuggestedStops' && choice.state === 'output-available'
     ? choice.input.chips : []
+  const selectedChips = selected.filter((stop) => !stop.id.startsWith('custom-stop-'))
+    .map((stop) => chipCategories.find((chip) => chip.id === stop.id))
+    .filter((chip): chip is NonNullable<typeof chip> => Boolean(chip))
   return {
     pace,
     requestedNames: selected.filter((stop) => stop.id.startsWith('custom-stop-')).map((stop) => stop.label),
-    categories: selected.filter((stop) => !stop.id.startsWith('custom-stop-')).map((stop) =>
-      chipCategories.find((chip) => chip.id === stop.id)?.category ?? 'default',
-    ),
+    selectedPlaces: selectedChips.filter((chip) => chip.location).map((chip) => ({
+      name: chip.label, location: chip.location!, category: chip.category ?? 'default',
+    })),
+    categories: selectedChips.filter((chip) => !chip.location).map((chip) => chip.category ?? 'default'),
     noExtraStops: (choice?.type === 'tool-showSuggestedStops' && choice.state === 'output-available' && selected.length === 0) ||
       /no extra stops|without (?:any )?stops/i.test(userText),
     hasStopChoice: choice?.type === 'tool-showSuggestedStops' && choice.state === 'output-available',
@@ -171,8 +176,8 @@ function placeKey(name: string, address: string) {
   return `${name} ${address}`.normalize('NFKD').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
 }
 
-function wasVerified(name: string, address: string) {
-  const timestamp = verifiedAddresses.get(placeKey(name, address))
+function wasVerified(name: string, location: string) {
+  const timestamp = verifiedAddresses.get(placeKey(name, location))
   return timestamp !== undefined && timestamp > Date.now() - 24 * 60 * 60 * 1000
 }
 
@@ -201,7 +206,7 @@ const findPlacesTool = tool({
           : []
         if (verifiedAddresses.size > 1000) verifiedAddresses.clear()
         for (const match of [...matches, ...nearbyChargers]) {
-          if (match.address) verifiedAddresses.set(placeKey(match.name, match.address), Date.now())
+          verifiedAddresses.set(placeKey(match.name, match.address ?? match.area), Date.now())
         }
         return { query, matches, nearbyChargers }
       } catch {
@@ -275,29 +280,48 @@ const showRouteSummaryTool = tool({
   }),
 })
 
-const showSuggestedStopsTool = tool({
-  description:
-    'Show selectable chip suggestions for types of stops or specific places. Use this early in the conversation to let users quickly pick what kinds of stops they want (e.g. coffee shops, viewpoints, local diners) or suggest a curated set of specific stops for them to choose from. Supports multi-select.',
-  inputSchema: z.object({
+const suggestedStopsSchema = z.object({
     title: z.string().describe('Label above the chips (e.g. "What kind of stops do you want?")'),
     chips: z.array(
       z.object({
         id: z.string().describe('Unique identifier'),
         label: z.string().describe('Chip display text'),
         sublabel: z.string().nullable().optional().describe('Optional extra info shown on the chip'),
+        location: z.string().nullable().optional().describe('Exact street address if present in findPlaces; otherwise its exact city/state area. Never invent an address.'),
         category: z
           .enum(['food', 'coffee', 'fuel', 'attraction', 'lodging', 'shopping', 'scenic', 'entertainment', 'default'])
           .nullable().optional(),
       })
-    ).min(2).max(10),
+    ).min(1).max(10),
     multiSelect: z.boolean().describe('Whether the user can select multiple chips'),
-  }),
+  })
+const showSuggestedStopsTool = tool({
+  description:
+    'Show selectable, named places in cities along the chosen route. First use findPlaces and offer only matching named results. Use the returned street address when available, otherwise the exact city/state area; never invent an address. Each chip is one specific place, with its type and city in the sublabel. Supports multi-select.',
+  inputSchema: suggestedStopsSchema,
   outputSchema: z.array(
     z.object({
       id: z.string(),
       label: z.string(),
     })
   ).describe('The chosen stop types and any named places entered by the traveler. Items with an id starting custom-stop- are specific places the traveler requested. An empty array means no optional stops.'),
+})
+
+// Check suggested places before they reach the traveler. A plausible-looking
+// address supplied by the model is not evidence that the place exists.
+const verifiedSuggestedStopsTool = tool({
+  ...showSuggestedStopsTool,
+  inputSchema: suggestedStopsSchema.superRefine((input, context) => {
+    for (const [index, chip] of input.chips.entries()) {
+      if (!chip.location || !wasVerified(chip.label, chip.location)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['chips', index],
+          message: `${chip.label} needs its exact name and address or city from findPlaces before it can be suggested. Search for another place if necessary.`,
+        })
+      }
+    }
+  }),
 })
 
 const showChargingStationsTool = tool({
@@ -347,7 +371,7 @@ const showRouteOptionsTool = tool({
 // A completed itinerary is one structured tool call. The client renders its
 // text and existing cards in order, so the model cannot print fake tool calls.
 const createPublishPlanTool = (preferences: PlanPreferences) => tool({
-  description: 'Publish the completed EV trip in the existing answer layout: plain-text route legs, place cards, charging cards, then the route timeline and Google Maps link. Every planned stop must have the exact real name and full street address returned by findPlaces. The server rejects unverified addresses so you can look up an alternative.',
+  description: 'Publish the completed EV trip in the existing answer layout: plain-text route legs, place cards, charging cards, then the route timeline and Apple Maps and Google Maps links. Every planned stop must have its exact real name and the location returned by findPlaces. Prefer full street addresses; if a named park or landmark has no street address, use its returned city/state and say the address is unavailable. Never invent one.',
   inputSchema: z.object({
     itinerary: z.string().min(20).describe('Plain-text overview and short numbered route legs, including exact place names and full street addresses in driving order. No Markdown symbols or function-call text.'),
     places: z.array(z.object({
@@ -392,6 +416,11 @@ const createPublishPlanTool = (preferences: PlanPreferences) => tool({
         errors.push(`The traveler requested ${requested}. Include that named place and its verified address; if it cannot be found, ask for its city or street address before publishing.`)
       }
     }
+    for (const selected of preferences.selectedPlaces) {
+      if (!plan.places.some((stop) => placeKey(stop.name, stop.location) === placeKey(selected.name, selected.location))) {
+        errors.push(`The traveler selected ${selected.name} at ${selected.location}. Include this exact named place and address as a planned stop.`)
+      }
+    }
     for (const category of new Set(preferences.categories)) {
       if (category === 'default') continue
       if (!plan.places.some((stop) => stop.category === category ||
@@ -399,15 +428,15 @@ const createPublishPlanTool = (preferences: PlanPreferences) => tool({
         errors.push(`Include a verified ${category} stop chosen by the traveler as well as their named places.`)
       }
     }
-    const minimum = preferences.requestedNames.length + preferences.categories.length
+    const minimum = preferences.requestedNames.length + preferences.categories.length + preferences.selectedPlaces.length
     if (plan.places.length < minimum) errors.push(`Include at least ${minimum} distinct places: every named place plus a separate recommendation for each selected stop type.`)
     for (const stop of cards) {
       if (!wasVerified(stop.name, stop.location)) {
-        errors.push(`${stop.name} at ${stop.location} was not in the place lookup results. Search for a real named stop with a street address and use the returned name and address exactly.`)
+        errors.push(`${stop.name} at ${stop.location} was not in the place lookup results. Use the returned name and street address, or its returned city/state if no address exists.`)
       }
       const street = stop.location.split(',')[0].toLowerCase()
       if (!plan.itinerary.toLowerCase().includes(street)) {
-        errors.push(`Include ${stop.name}'s street address (${street}) in the itinerary text.`)
+        errors.push(`Include ${stop.name}'s verified location (${street}) in the itinerary text.`)
       }
     }
     for (const stop of plan.summary.stops) {
@@ -441,7 +470,7 @@ const createPublishPlanTool = (preferences: PlanPreferences) => tool({
   },
 })
 
-const publishPlanTool = createPublishPlanTool({ pace: null, requestedNames: [], categories: [], noExtraStops: false, hasStopChoice: false })
+const publishPlanTool = createPublishPlanTool({ pace: null, requestedNames: [], selectedPlaces: [], categories: [], noExtraStops: false, hasStopChoice: false })
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -467,39 +496,39 @@ const SYSTEM_PROMPT = `You are Routewise, a friendly and knowledgeable AI road t
 - After a completed itinerary, treat the next user message as a follow-up. Answer questions about the existing route directly. If they request changes, revise the relevant part and update the route summary; if they request a new trip, plan it using the known EV range unless they changed vehicles. Do not restart the entire questionnaire or repeat the full itinerary for a small question.
 - Plan charging legs conservatively: allow a reserve and account for weather, terrain, and highway speed. If the starting battery level is unknown, clearly state the starting-charge assumption. Never promise that a leg is safely reachable from the rated range alone.
 - You do not have access to live maps, road closures, charger status, or reservation systems. State that routes, drive times, and charging suggestions are estimates. Never claim a charger is available, operational, or compatible without verified data.
-- You CAN use findPlaces to search OpenStreetMap place data for names and street addresses. This is a place directory, not live routing or charger-status data. Before naming any restaurant, park entrance, overlook, or charging station as a PLANNED STOP, use findPlaces with the place name and city/state. Choose a returned match that has both the correct name and a non-null street address. Copy that address exactly into publishPlan.itinerary, the corresponding card, and publishPlan.summary. Keep the same place name and address in every view. For a park or viewpoint without a numbered street address, search for a named entrance, visitor center, or trailhead with an address. If no address can be found, say the street address could not be verified and do not invent one; prefer another stop with an address. Never treat a name-only search result as proof of a street address.
+- You CAN use findPlaces to search OpenStreetMap place data for names and street addresses. This is a place directory, not live routing or charger-status data. Before naming any restaurant, park entrance, overlook, or charging station as a PLANNED STOP, use findPlaces with the place name and city/state. Prefer a returned match with a full street address and copy it exactly into the itinerary, cards, and summary. Parks and landmarks sometimes have no numbered address; for these, copy the returned city/state area exactly and say that no street address was available. Never invent a street address. Keep the same name and verified location in every view.
 - If the traveler provides a street address or named business for the start or destination, preserve that full location in publishPlan.summary so the map opens at the intended place, rather than reducing it to a city name.
 - Do not invent exact charger port counts, power ratings, or real-time availability. Use null for unknown fields and invite the traveler to verify the route and charger details before departure.
-- Give the traveler a complete itinerary in plain text before the visual cards: the chosen highways/roads, each leg in driving order with approximate distance and driving time, where and why to charge (including an estimated charging break only if the vehicle and charge assumptions support it), and the specific names and full street addresses of restaurants, parks, scenic overlooks, charging stations, or other places they will visit. Explain what they will do at each stop. Distinguish drive time from time spent charging or visiting. If no en-route charge is needed, say so and explain the starting-charge assumption. Be concise: the cards will carry supporting details, so do not repeat their descriptions in long prose.
+- Give the traveler a complete itinerary in plain text before the visual cards: the chosen highways/roads, each leg in driving order with approximate distance and driving time, where and why to charge (including an estimated charging break only if the vehicle and charge assumptions support it), and the specific names and verified locations of restaurants, parks, scenic overlooks, charging stations, or other places they will visit. Explain what they will do at each stop. Distinguish drive time from time spent charging or visiting. If no en-route charge is needed, say so and explain the starting-charge assumption. Be concise: the cards will carry supporting details, so do not repeat their descriptions in long prose.
 - Include only places you are reasonably confident exist. Never fabricate a restaurant, park, charger, address, or precise schedule. Mark uncertain charging locations as candidate areas and ask the traveler to confirm them before departure. If the vehicle, starting state of charge, departure time, or connector is unknown, state the assumption instead of making up a precise charging duration or ETA.
-- The final route summary must include EVERY stop the itinerary actually plans to visit, in exactly the same order as the detailed text and charging/place cards. Use the verified specific place name plus its full street address, not just a city. Keep the complete itinerary to at most nine intermediate stops so one Google Maps directions link can include them all. Never drop a selected stop when adding a manually named place.
+- The final route summary must include EVERY stop the itinerary actually plans to visit, in exactly the same order as the detailed text and charging/place cards. Use the verified specific place name plus its full street address if available, or its verified city/state if not. Keep the complete itinerary to at most nine intermediate stops so the Google Maps alternative can include them all. Apple Maps is the primary navigation link. Never drop a selected stop when adding a manually named place.
 - Restaurants, parks, scenic overlooks, and other sightseeing stops are optional. If the traveler chooses "No extra stops" or skips stop suggestions, do not add optional stops anyway. Include only charging stops actually needed for their EV range; a trip can have zero intermediate stops. Pass an empty places array when there are no optional places.
 - Even when there are zero intermediate stops, include a short plain-text route explanation with the chosen road, estimated distance and drive time, and whether charging is needed inside publishPlan.itinerary. Never send a route-summary card by itself as the whole final answer.
 - After collecting the user's preferences, produce the itinerary, supporting cards, and final Route Summary in one answer. Do NOT ask the user to confirm the plan first. The user will follow up with changes if they want adjustments.
-- For the final itinerary, use ONE real publishPlan tool call. Put the short plain-text overview and numbered legs in itinerary, non-charging places in places, needed chargers in chargingStations, and all stops in summary.stops in driving order. The client renders these in the existing layout: text, places, charging cards, route timeline, then Google Maps link. Do not write the itinerary separately, call showRouteStops/showChargingStations/showRouteSummary separately, print pseudo-code, or paste a raw Google Maps URL. Continue normal conversational text for questions and follow-ups that do not need a new itinerary.
+- For the final itinerary, use ONE real publishPlan tool call. Put the short plain-text overview and numbered legs in itinerary, non-charging places in places, needed chargers in chargingStations, and all stops in summary.stops in driving order. The client renders these in the existing layout: text, places, charging cards, route timeline, then Apple Maps and Google Maps links. Do not write the itinerary separately, call showRouteStops/showChargingStations/showRouteSummary separately, print pseudo-code, or paste a raw map URL. Continue normal conversational text for questions and follow-ups that do not need a new itinerary.
 
 ## Conversation Flow
 1. Greet briefly and identify the trip (origin and destination). A casual greeting alone is not a trip request.
 2. Confirm the traveler's full-charge EV range in miles before planning. The server asks for it when a trip request is made without a range; never create a route, route options, or stops before they answer or explain they do not know it.
 3. If multiple viable routes exist, use showRouteOptions to let the user choose one.
 4. Ask trip pace using askMultipleChoice with exactly Relaxed (Frequent stops), Moderate (Balanced), Flexible (Depends on mood), and Fast (Minimal stops), unless the traveler already gave a pace or requested no extra stops. This question comes before stop types.
-5. Use showSuggestedStops with multiSelect: true after pace to gather stop suggestions. Offer 9–10 choices for Relaxed, 7–8 for Moderate, 3–6 for Flexible, and 1–2 for Fast. These are choices to consider, not all required route stops. The traveler can also type specific named places and add more than one. Keep ALL selected stop types AND named places in the plan. The traveler can choose no extra stops using the separate button already in the card; do not create a "No extra stops" chip.
-6. Once you have the route and preferences, call findPlaces for every manually named stop AND at least one separate place for each selected stop type. Search for all intended stops in batches before publishing; if a result lacks an address, look for a different verified match in the same area. Use only matching returned names and street addresses.
+5. After pace, use findPlaces to discover named restaurants, coffee shops, museums, park visitor centers, scenic overlooks, and other places in cities along the actual route. Search across the route, including intermediate towns, rather than concentrating at the origin or destination. Use each lookup batch for different candidates. Then use showSuggestedStops with multiSelect: true. Offer 9–10 named place choices for Relaxed, 7–8 for Moderate, 3–6 for Flexible, and 1–2 for Fast. Each chip must be one real named place returned by findPlaces. Set label to its exact returned name, location to its exact returned street address if present or exact area if absent, category to its type, and sublabel to a readable type and city/state (for example "Coffee shop · Sacramento, CA"). Do not offer generic types such as "Nature Parks" or invent named places or addresses. The traveler can also type specific named places and add more than one. Keep ALL selected places and typed places in the plan. The traveler can choose no extra stops using the separate button already in the card; do not create a "No extra stops" chip.
+6. Once the traveler selects places, preserve each selected name and location exactly. Call findPlaces again for every selected suggestion, every manually typed stop, and any needed charging station. Prefer street addresses, but when the source has none for a named stop, use its city/state area and say no street address was available. Use only matching returned names and locations.
 7. Call publishPlan with the complete itinerary, supporting cards, and summary. Do not write more text or call more tools afterward. This also applies when there are zero intermediate stops: pass empty places, chargingStations, and summary.stops arrays.
 
 ## Tool Usage Guidelines
 
 ### findPlaces
-Look up planned stops in batches with queries that include the name and city/state. Use the returned address only for the matching place. For charging searches, nearbyChargers may contain verified named stations in that city when the requested network has no result; use one of those rather than inventing a station for the preferred network. Search another candidate when a result lacks a street address or the name is ambiguous. Never turn a failed lookup into a fabricated address. Search stop locations before producing the final itinerary; do not call this tool for routine conversational questions or when the route has no intermediate stops.
+Look up planned stops in batches with queries that include the name and city/state. Use the returned address only for the matching place. For charging searches, nearbyChargers may contain verified named stations in that city when the requested network has no result; use one of those rather than inventing a station for the preferred network. Search another candidate when the name is ambiguous. Never turn a failed lookup into a fabricated address. Search stop locations before producing the final itinerary; do not call this tool for routine conversational questions or when the route has no intermediate stops.
 
 ### publishPlan
-This is the ONLY tool for publishing a completed or revised itinerary. Put exact place names and full street addresses from findPlaces in itinerary and in each matching card/summary field. Keep the total itinerary concise and plain text. If a chosen place has no verified address, search for a different named place before publishing. The server will reject any invented address and return the specific errors so you can correct them. The summary must include all planned stops in driving order; the client creates the final Google Maps link.
+This is the ONLY tool for publishing a completed or revised itinerary. Put exact place names and verified locations from findPlaces in itinerary and in each matching card/summary field. Prefer street addresses; use the returned city/state for a named place without one and say its street address was unavailable. Keep the total itinerary concise and plain text. The server will reject invented locations. The summary must include all planned stops in driving order; the client creates the final Apple Maps and Google Maps links.
 
 ### askMultipleChoice
 Use to collect structured preferences. ALWAYS provide 4 options when possible (they render in a 2-column grid). Examples: trip pace (Relaxed / Moderate / Fast / Flexible), dining style (Local gems / Fine dining / Quick bites / Roadside classics), scenic preference, time of departure. Limit to one question at a time. For any optional stop question, include a "No extra stops" option.
 
 ### showSuggestedStops
-Use to let the user pick categories or types of stops (e.g. coffee, scenic overlooks, local diners, national parks, viewpoints, photo spots). ALWAYS pass multiSelect: true unless there is a clear reason for single-select. Offer 9–10 distinct chips for Relaxed, 7–8 for Moderate, 3–6 for Flexible, and 1–2 for Fast. Never include a "No extra stops" chip because the card has that button. These are optional suggestions; only selected chips become planned stops. An output id starting custom-stop- is a place the traveler explicitly requested. Search for its exact name and city; include it in the route if it can be verified and fits the trip. If it is ambiguous or lacks a verified address, ask for its city or street address instead of silently replacing it. An empty selection means no extra stops; do not ask again or insert any optional stops.
+Use to let the traveler pick specific named places on the route. ALWAYS pass multiSelect: true. Offer 9–10 verified, distinct named places for Relaxed, 7–8 for Moderate, 3–6 for Flexible, and 1–2 for Fast. For each chip, copy the exact name and street address returned by findPlaces, or its exact city/state area if no street address exists. Show the type and city/state in sublabel. Never offer vague types as chips or include a "No extra stops" chip because the card has that button. These are optional suggestions; only selected chips become planned stops. An output id starting custom-stop- is a place the traveler explicitly typed. Search for its exact name and city; include it in the route if it can be verified and fits the trip. If it is ambiguous or cannot be found, ask for its city or street address instead of silently replacing it. An empty selection means no extra stops; do not ask again or insert any optional stops.
 
 ### showRouteOptions
 Use when there are 2+ viable route alternatives (e.g. coastal vs. inland, PCH vs. I-5). Offer route options early in the planning so the user can choose direction. Include distance, EV-aware drive time, highlights, and tags (scenic, fast, eco, popular).
@@ -544,9 +573,10 @@ export async function POST(req: Request) {
   const evRangeMiles = getEvRangeMiles(messages)
   const preferences = planPreferences(messages)
   const requestedStops = preferences.requestedNames.length ? ` Named places the traveler requested: ${preferences.requestedNames.join('; ')}.` : ''
+  const chosenPlaces = preferences.selectedPlaces.length ? ` Named suggestions the traveler selected: ${preferences.selectedPlaces.map((place) => `${place.name} at ${place.location}`).join('; ')}. Include every one exactly.` : ''
   const selectedTypes = preferences.categories.length ? ` Selected stop types: ${preferences.categories.join(', ')}. Recommend a distinct place for each selected type in addition to the named places.` : ''
   const paceAdvice = preferences.pace ? ` Pace: ${preferences.pace}. The earlier stop-choice card offered suggestions; plan only the choices the traveler selected plus needed charging. Never replace selected stop types with the named places.` : ''
-  const tripPreferences = requestedStops + selectedTypes + paceAdvice
+  const tripPreferences = requestedStops + chosenPlaces + selectedTypes + paceAdvice
   const latestUser = [...messages].reverse().find((message) => message.role === 'user')
   const latestUserText = latestUser ? getUserText(latestUser) : ''
   const lastAssistant = [...messages].reverse().find((message) => message.role === 'assistant')
@@ -587,7 +617,7 @@ export async function POST(req: Request) {
         ? `${SYSTEM_PROMPT}\n\nThe traveler has not given an EV range yet. ${answeringRangeQuestion ? 'They are responding to your range question. If they supplied an EV model and year, give a clearly labeled approximate range and ask them to confirm it before planning. Otherwise ask for their EV model; do not repeat the same range question, invent a precise range, or plan the route yet.' : 'Their latest message is not a trip request. Respond conversationally and do not mention EV range yet. You may ask where they would like to go.'} Do not generate a route until a numeric range is known or the traveler explicitly accepts a stated planning estimate.`
         : `${SYSTEM_PROMPT}\n\nThe traveler stated an EV full-charge range of ${evRangeMiles} miles. Use this range when planning charging stops and explain your starting-charge and reserve assumptions.${tripPreferences}`,
       messages: modelMessages,
-      tools: { ...tools, publishPlan: createPublishPlanTool(preferences) },
+      tools: { ...tools, showSuggestedStops: verifiedSuggestedStopsTool, publishPlan: createPublishPlanTool(preferences) },
       providerOptions: {
         google: { thinkingConfig: { thinkingLevel: 'minimal' } },
       },
@@ -601,12 +631,23 @@ export async function POST(req: Request) {
         }
         if (evRangeMiles !== null && preferences.pace && !preferences.hasStopChoice && !preferences.noExtraStops &&
           !messages.some((message) => message.parts.some((part) => part.type === 'tool-publishPlan' && part.state === 'output-available' && part.output?.valid))) {
+          const lookupResults = steps.flatMap((step) => step.toolResults)
+            .filter((result) => result.toolName === 'findPlaces')
+          const target = { relaxed: 9, moderate: 7, flexible: 3, fast: 1 }[preferences.pace]
+          const found = new Set(lookupResults.flatMap((result) => {
+            const output = result.output as { results?: { matches?: { name: string; address: string | null; area: string; kind: string | null }[] }[] }
+            return output.results?.flatMap((entry) => entry.matches ?? []) ?? []
+          }).filter((place) => !/charg|supercharger/i.test(`${place.kind} ${place.name}`))
+            .map((place) => placeKey(place.name, place.address ?? place.area)))
+          if (found.size < target && lookupResults.length < 3) {
+            return { activeTools: ['findPlaces'], toolChoice: { type: 'tool', toolName: 'findPlaces' } }
+          }
           return { activeTools: ['showSuggestedStops'], toolChoice: { type: 'tool', toolName: 'showSuggestedStops' } }
         }
         const lastPlanStep = steps.findLastIndex((step) => step.toolResults.some((result) => result.toolName === 'publishPlan'))
         const lookupsSincePlan = steps.slice(lastPlanStep + 1).flatMap((step) => step.toolCalls)
           .filter((call) => call.toolName === 'findPlaces').length
-        if (lookupsSincePlan >= 2) {
+        if (lookupsSincePlan >= 3) {
           return { activeTools: ['publishPlan'], toolChoice: { type: 'tool', toolName: 'publishPlan' } }
         }
         if (lookupsSincePlan >= 1 || lastPlanStep >= 0) {
