@@ -27,20 +27,6 @@ export function RouteMap({ origin, destination, stops }: RouteMapProps) {
   });
   for (const waypoint of waypoints) appleDirections.append("waypoint", waypoint);
 
-  const points = [origin, ...waypoints, destination];
-  const mobileLegs: string[] = [];
-  for (let start = 0; start < points.length - 1; start += 4) {
-    const end = Math.min(start + 4, points.length - 1);
-    const leg = new URLSearchParams({
-      api: "1",
-      origin: points[start],
-      destination: points[end],
-      travelmode: "driving",
-    });
-    if (end - start > 1) leg.set("waypoints", points.slice(start + 1, end).join("|"));
-    mobileLegs.push(`https://www.google.com/maps/dir/?${leg.toString()}`);
-  }
-
   return (
     <div className="border-t border-border bg-secondary/20 p-6">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -75,18 +61,6 @@ export function RouteMap({ origin, destination, stops }: RouteMapProps) {
           <ExternalLink aria-hidden="true" className="h-3.5 w-3.5" />
         </a>
       </div>
-      {waypoints.length > 3 && (
-        <div className="mt-4 text-xs text-muted-foreground">
-          <p>Google Maps on a phone may show only three intermediate stops. Open these connected legs to see every stop there:</p>
-          <div className="mt-2 flex flex-wrap gap-3">
-            {mobileLegs.map((url, index) => (
-              <a key={url} href={url} target="_blank" rel="noopener noreferrer" className="font-medium text-foreground underline underline-offset-4">
-                Leg {index + 1} of {mobileLegs.length}
-              </a>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
