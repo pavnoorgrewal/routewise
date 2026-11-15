@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import {
@@ -8,12 +8,14 @@ import {
   ArrowDown,
   MapPin,
   Navigation,
+  LoaderCircle,
   Zap,
   Mountain,
   Waves,
   Check,
 } from "lucide-react";
 import { LocationInput } from "@/components/location-input";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 const inspirations = [
   {
@@ -41,10 +43,64 @@ const inspirations = [
 export function Hero() {
   const router = useRouter();
   const [from, setFrom] = useState("");
+  const fromRef = useRef("");
   const [to, setTo] = useState("");
+  const [locating, setLocating] = useState(false);
+  const [locationNotice, setLocationNotice] = useState("");
+  const [usedOpenStreetMap, setUsedOpenStreetMap] = useState(false);
   const [scene, setScene] = useState(0);
   const inspiration = inspirations[scene];
   const canSubmit = from.trim().length > 0 && to.trim().length > 0;
+
+  function updateFrom(value: string) {
+    fromRef.current = value;
+    setFrom(value);
+    setLocationNotice("");
+    setUsedOpenStreetMap(false);
+  }
+
+  function useCurrentLocation() {
+    if (!navigator.geolocation) {
+      setLocationNotice("Your browser does not support location access. Enter a starting point instead.");
+      return;
+    }
+
+    const valueAtClick = fromRef.current;
+    setLocating(true);
+    setLocationNotice("");
+    navigator.geolocation.getCurrentPosition(
+      async ({ coords }) => {
+        const coordinates = `${coords.latitude.toFixed(6)}, ${coords.longitude.toFixed(6)}`;
+        let address: string | null = null;
+        try {
+          const response = await fetch("/api/current-location", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ latitude: coords.latitude, longitude: coords.longitude }),
+          });
+          if (response.ok) {
+            const result = await response.json() as { address?: string | null };
+            address = result.address ?? null;
+          }
+        } catch {
+          // Coordinates still provide an exact starting point when address lookup is unavailable.
+        }
+        if (fromRef.current === valueAtClick) {
+          updateFrom(address ?? coordinates);
+          setUsedOpenStreetMap(Boolean(address));
+          if (!address) setLocationNotice("Using your coordinates because a street address was unavailable.");
+        }
+        setLocating(false);
+      },
+      (error) => {
+        setLocating(false);
+        setLocationNotice(error.code === error.PERMISSION_DENIED
+          ? "Location access was denied. Allow it in your browser settings or enter a starting point."
+          : "We couldn’t get your location. Try again or enter a starting point.");
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
+    );
+  }
 
   return (
     <section className="hero-section relative z-10 flex min-h-svh flex-col justify-center pt-24">
@@ -74,17 +130,40 @@ export function Hero() {
             className="trip-form entrance relative mt-10 max-w-[28rem] rounded-[22px] border border-black/[0.08] bg-white p-2 shadow-[0_4px_6px_-4px_#0000000a,0_20px_50px_-25px_#38302125] [animation-delay:140ms]"
           >
             <div className="relative z-20 flex items-center gap-3 px-3 py-3">
-              <Navigation
-                aria-hidden="true"
-                className="h-[18px] w-[18px] shrink-0 text-brand"
-              />
+              <TooltipProvider delayDuration={200}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      aria-label="Use Current Location"
+                      aria-busy={locating}
+                      disabled={locating}
+                      onClick={useCurrentLocation}
+                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-brand transition-colors hover:bg-brand/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:cursor-wait"
+                    >
+                      {locating
+                        ? <LoaderCircle aria-hidden="true" className="h-[18px] w-[18px] animate-spin" />
+                        : <Navigation aria-hidden="true" className="h-[18px] w-[18px]" />}
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">Use Current Location</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
               <LocationInput
                 value={from}
-                onChange={setFrom}
+                onChange={updateFrom}
                 placeholder="Where are you starting?"
                 label="Starting location"
               />
             </div>
+            {(locationNotice || usedOpenStreetMap) && (
+              <p role={locationNotice ? "status" : undefined} className="px-4 pb-2 text-xs text-muted-foreground">
+                {locationNotice}
+                {usedOpenStreetMap && (
+                  <>Address © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">OpenStreetMap contributors</a></>
+                )}
+              </p>
+            )}
             <div className="mx-3 h-px bg-border/70" />
             <div className="relative z-10 flex items-center gap-3 px-3 py-3">
               <MapPin
@@ -195,7 +274,7 @@ export function Hero() {
                 <button
                   type="button"
                   onClick={() => {
-                    setFrom(inspiration.from);
+                    updateFrom(inspiration.from);
                     setTo(inspiration.to);
                   }}
                   className="group flex items-center gap-1.5 rounded-full py-2 text-xs font-medium text-brand"
