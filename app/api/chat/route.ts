@@ -13,7 +13,7 @@ import {
 import { z } from 'zod'
 import { google } from '@ai-sdk/google'
 import { openai } from '@ai-sdk/openai'
-import { searchPlaces } from '@/lib/place-search'
+import { searchPlaces, type PlaceMatch } from '@/lib/place-search'
 import locations from '@/data/us-locations.json'
 
 export const maxDuration = 60
@@ -80,6 +80,15 @@ function isTripRequest(text: string): boolean {
     /\bfrom\b[\s\S]{0,120}\bto\b/i.test(text)
 }
 
+function currentTripMessages(messages: ChatMessage[]): ChatMessage[] {
+  const lastCompletedPlan = messages.findLastIndex((message) => message.parts.some((part) =>
+    part.type === 'tool-publishPlan' && part.state === 'output-available' && part.output?.valid))
+  if (lastCompletedPlan < 0) return messages
+  const newTrip = messages.findIndex((message, index) => index > lastCompletedPlan && message.role === 'user' &&
+    /\bfrom\b[\s\S]{0,120}\bto\b/i.test(getUserText(message)))
+  return newTrip < 0 ? messages : messages.slice(newTrip)
+}
+
 function modelHistory(messages: ChatMessage[]): ChatMessage[] {
   return messages.slice(-24).map((message) => ({
     ...message,
@@ -118,7 +127,6 @@ function modelHistory(messages: ChatMessage[]): ChatMessage[] {
 
 const verifiedAddresses = new Map<string, number>()
 type PlanPreferences = {
-  pace: 'relaxed' | 'moderate' | 'flexible' | 'fast' | null
   requestedNames: string[]
   selectedPlaces: { name: string; location: string; category: string }[]
   categories: string[]
@@ -129,16 +137,6 @@ type PlanPreferences = {
 function planPreferences(messages: ChatMessage[]): PlanPreferences {
   const latestText = [...messages].reverse().find((message) => message.role === 'user')
   const userText = latestText ? getUserText(latestText) : ''
-  const chosenPace = messages.flatMap((message) => message.parts).filter((part) =>
-    part.type === 'tool-askMultipleChoice' && part.state === 'output-available' &&
-    /pace|relaxed|moderate|balanced|flexible|minimal stops/i.test(part.input.question),
-  ).at(-1)
-  const paceText = chosenPace?.type === 'tool-askMultipleChoice' && chosenPace.state === 'output-available'
-    ? chosenPace.output.selectedLabel : userText
-  const pace = /relaxed|frequent stops/i.test(paceText) ? 'relaxed'
-    : /moderate|balanced/i.test(paceText) ? 'moderate'
-      : /flexible|depends on mood/i.test(paceText) ? 'flexible'
-        : /fast\s*\(|minimal stops|fast pace/i.test(paceText) ? 'fast' : null
   const choice = messages.flatMap((message) => message.parts).filter((part) =>
     part.type === 'tool-showSuggestedStops' && part.state === 'output-available',
   ).at(-1)
@@ -150,7 +148,6 @@ function planPreferences(messages: ChatMessage[]): PlanPreferences {
     .map((stop) => chipCategories.find((chip) => chip.id === stop.id))
     .filter((chip): chip is NonNullable<typeof chip> => Boolean(chip))
   return {
-    pace,
     requestedNames: selected.filter((stop) => stop.id.startsWith('custom-stop-')).map((stop) => stop.label),
     selectedPlaces: selectedChips.filter((chip) => chip.location).map((chip) => ({
       name: chip.label, location: chip.location!, category: chip.category ?? 'default',
@@ -181,7 +178,7 @@ function wasVerified(name: string, location: string) {
   return timestamp !== undefined && timestamp > Date.now() - 24 * 60 * 60 * 1000
 }
 
-const findPlacesTool = tool({
+const createFindPlacesTool = (onMatches?: (matches: PlaceMatch[]) => void) => tool({
   description:
     'Look up real US restaurants, parks, scenic stops, and EV charging stations by name and city before including them in a final itinerary. Results come from OpenStreetMap via Photon. Use returned street addresses verbatim; a null address means no street address was found and must not be invented.',
   inputSchema: z.object({
@@ -208,6 +205,10 @@ const findPlacesTool = tool({
         for (const match of [...matches, ...nearbyChargers]) {
           verifiedAddresses.set(placeKey(match.name, match.address ?? match.area), Date.now())
         }
+        const queryCity = cityInQuery(query)
+        onMatches?.(queryCity
+          ? matches.filter((match) => match.area.toLowerCase().includes(queryCity.name.toLowerCase()))
+          : matches)
         return { query, matches, nearbyChargers }
       } catch {
         return { query, matches: [], error: 'Lookup unavailable; do not invent an address.' }
@@ -216,9 +217,11 @@ const findPlacesTool = tool({
   }),
 })
 
+const findPlacesTool = createFindPlacesTool()
+
 const askMultipleChoiceTool = tool({
   description:
-    'Ask the user a multiple choice question and wait for their selection. Use this when you need the user to pick from a set of options, for example trip pace, accommodation type, route preference, or activity interests.',
+    'Legacy multiple choice tool retained to read earlier conversations. Do not use for new trip plans.',
   inputSchema: z.object({
     question: z.string().describe('The question to ask the user'),
     options: z
@@ -292,7 +295,7 @@ const suggestedStopsSchema = z.object({
           .enum(['food', 'coffee', 'fuel', 'attraction', 'lodging', 'shopping', 'scenic', 'entertainment', 'default'])
           .nullable().optional(),
       })
-    ).min(1).max(10),
+    ).min(0).max(10),
     multiSelect: z.boolean().describe('Whether the user can select multiple chips'),
   })
 const showSuggestedStopsTool = tool({
@@ -307,22 +310,44 @@ const showSuggestedStopsTool = tool({
   ).describe('The chosen stop types and any named places entered by the traveler. Items with an id starting custom-stop- are specific places the traveler requested. An empty array means no optional stops.'),
 })
 
-// Check suggested places before they reach the traveler. A plausible-looking
-// address supplied by the model is not evidence that the place exists.
-const verifiedSuggestedStopsTool = tool({
-  ...showSuggestedStopsTool,
-  inputSchema: suggestedStopsSchema.superRefine((input, context) => {
-    for (const [index, chip] of input.chips.entries()) {
-      if (!chip.location || !wasVerified(chip.label, chip.location)) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['chips', index],
-          message: `${chip.label} needs its exact name and address or city from findPlaces before it can be suggested. Search for another place if necessary.`,
+function suggestionCategory(kind: string | null): 'food' | 'coffee' | 'attraction' | 'scenic' | 'entertainment' | 'default' {
+  if (/cafe|coffee/i.test(kind ?? '')) return 'coffee'
+  if (/restaurant|fast_food|food|bakery/i.test(kind ?? '')) return 'food'
+  if (/viewpoint|scenic/i.test(kind ?? '')) return 'scenic'
+  if (/museum|theatre|cinema|arts_centre/i.test(kind ?? '')) return 'entertainment'
+  if (/park|garden|nature|attraction|historic|visitor/i.test(kind ?? '')) return 'attraction'
+  return 'default'
+}
+
+function createSuggestedStopsTool(matches: PlaceMatch[]) {
+  return tool({
+    description: 'Present one optional stop picker using real named places found by findPlaces. The server fills the picker from verified lookup results.',
+    inputSchema: suggestedStopsSchema.transform((input) => {
+      const candidates = matches.filter((match) =>
+        match.name && match.area && !/charg|supercharger|parking|apartment|residential|school|office|gift/i.test(`${match.name} ${match.kind ?? ''}`))
+      const verified = new Map(candidates.map((match) => [placeKey(match.name, match.address ?? match.area), match]))
+      const chips = input.chips.flatMap((chip) => {
+        const match = chip.location ? verified.get(placeKey(chip.label, chip.location)) : undefined
+        return match ? [{ ...chip, category: suggestionCategory(match.kind), location: match.address ?? match.area }] : []
+      })
+      const used = new Set(chips.map((chip) => placeKey(chip.label, chip.location)))
+      for (const match of candidates) {
+        const location = match.address ?? match.area
+        const key = placeKey(match.name, location)
+        if (used.has(key) || chips.length >= 6) continue
+        used.add(key)
+        chips.push({
+          id: `place-${chips.length}-${key.slice(0, 24).replaceAll(' ', '-')}`,
+          label: match.name,
+          location,
+          category: suggestionCategory(match.kind),
+          sublabel: `${match.kind ?? 'Place'} · ${match.area}`,
         })
       }
-    }
-  }),
-})
+      return { ...input, title: chips.length ? input.title : 'Add a place to visit (optional)', chips }
+    }),
+  })
+}
 
 const showChargingStationsTool = tool({
   description:
@@ -470,7 +495,7 @@ const createPublishPlanTool = (preferences: PlanPreferences) => tool({
   },
 })
 
-const publishPlanTool = createPublishPlanTool({ pace: null, requestedNames: [], selectedPlaces: [], categories: [], noExtraStops: false, hasStopChoice: false })
+const publishPlanTool = createPublishPlanTool({ requestedNames: [], selectedPlaces: [], categories: [], noExtraStops: false, hasStopChoice: false })
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -510,11 +535,10 @@ const SYSTEM_PROMPT = `You are Routewise, a friendly and knowledgeable AI road t
 ## Conversation Flow
 1. Greet briefly and identify the trip (origin and destination). A casual greeting alone is not a trip request.
 2. Confirm the traveler's full-charge EV range in miles before planning. The server asks for it when a trip request is made without a range; never create a route, route options, or stops before they answer or explain they do not know it.
-3. If multiple viable routes exist, use showRouteOptions to let the user choose one.
-4. Ask trip pace using askMultipleChoice with exactly Relaxed (Frequent stops), Moderate (Balanced), Flexible (Depends on mood), and Fast (Minimal stops), unless the traveler already gave a pace or requested no extra stops. This question comes before stop types.
-5. After pace, use findPlaces to discover named restaurants, coffee shops, museums, park visitor centers, scenic overlooks, and other places in cities along the actual route. Search across the route, including intermediate towns, rather than concentrating at the origin or destination. Use each lookup batch for different candidates. Then use showSuggestedStops with multiSelect: true. Offer 9–10 named place choices for Relaxed, 7–8 for Moderate, 3–6 for Flexible, and 1–2 for Fast. Each chip must be one real named place returned by findPlaces. Set label to its exact returned name, location to its exact returned street address if present or exact area if absent, category to its type, and sublabel to a readable type and city/state (for example "Coffee shop · Sacramento, CA"). Do not offer generic types such as "Nature Parks" or invent named places or addresses. The traveler can also type specific named places and add more than one. Keep ALL selected places and typed places in the plan. The traveler can choose no extra stops using the separate button already in the card; do not create a "No extra stops" chip.
-6. Once the traveler selects places, preserve each selected name and location exactly. Call findPlaces again for every selected suggestion, every manually typed stop, and any needed charging station. Prefer street addresses, but when the source has none for a named stop, use its city/state area and say no street address was available. Use only matching returned names and locations.
-7. Call publishPlan with the complete itinerary, supporting cards, and summary. Do not write more text or call more tools afterward. This also applies when there are zero intermediate stops: pass empty places, chargingStations, and summary.stops arrays.
+3. If multiple viable routes exist, use showRouteOptions to let the user choose one. Do not ask about trip pace.
+4. Use findPlaces to discover named restaurants, coffee shops, museums, park visitor centers, scenic overlooks, and other places in cities along the actual route. Search across the route, including intermediate towns, rather than concentrating at the origin or destination. Then use showSuggestedStops exactly once with multiSelect: true and around 4–6 named places when available. Each chip must be one real named place returned by findPlaces. Set label to its exact returned name, location to its exact returned street address if present or exact area if absent, category to its type, and sublabel to a readable type and city/state (for example "Coffee shop · Sacramento, CA"). Do not offer generic types such as "Nature Parks" or invent named places or addresses. The traveler can also type specific named places and add more than one, or choose no extra stops. Never ask this stop question again after the card appears.
+5. Once the traveler selects places, preserve each selected name and location exactly. Call findPlaces again for every selected suggestion, every manually typed stop, and any needed charging station. Prefer street addresses, but when the source has none for a named stop, use its city/state area and say no street address was available. Use only matching returned names and locations.
+6. Call publishPlan with the complete itinerary, supporting cards, and summary. Do not write more text or call more tools afterward. This also applies when there are zero intermediate stops: pass empty places, chargingStations, and summary.stops arrays.
 
 ## Tool Usage Guidelines
 
@@ -524,11 +548,8 @@ Look up planned stops in batches with queries that include the name and city/sta
 ### publishPlan
 This is the ONLY tool for publishing a completed or revised itinerary. Put exact place names and verified locations from findPlaces in itinerary and in each matching card/summary field. Prefer street addresses; use the returned city/state for a named place without one and say its street address was unavailable. Keep the total itinerary concise and plain text. The server will reject invented locations. The summary must include all planned stops in driving order; the client creates the final Apple Maps and Google Maps links.
 
-### askMultipleChoice
-Use to collect structured preferences. ALWAYS provide 4 options when possible (they render in a 2-column grid). Examples: trip pace (Relaxed / Moderate / Fast / Flexible), dining style (Local gems / Fine dining / Quick bites / Roadside classics), scenic preference, time of departure. Limit to one question at a time. For any optional stop question, include a "No extra stops" option.
-
 ### showSuggestedStops
-Use to let the traveler pick specific named places on the route. ALWAYS pass multiSelect: true. Offer 9–10 verified, distinct named places for Relaxed, 7–8 for Moderate, 3–6 for Flexible, and 1–2 for Fast. For each chip, copy the exact name and street address returned by findPlaces, or its exact city/state area if no street address exists. Show the type and city/state in sublabel. Never offer vague types as chips or include a "No extra stops" chip because the card has that button. These are optional suggestions; only selected chips become planned stops. An output id starting custom-stop- is a place the traveler explicitly typed. Search for its exact name and city; include it in the route if it can be verified and fits the trip. If it is ambiguous or cannot be found, ask for its city or street address instead of silently replacing it. An empty selection means no extra stops; do not ask again or insert any optional stops.
+Use to let the traveler pick specific named places on the route. ALWAYS pass multiSelect: true. Offer around 4–6 verified named places if available. For each chip, copy the exact name and street address returned by findPlaces, or its exact city/state area if no street address exists. Show the type and city/state in sublabel. Never offer vague types as chips or include a "No extra stops" chip because the card has that button. If no verified suggestions are available, pass an empty chips array so the traveler can still type a place or choose no extra stops. Only selected chips become planned stops. An output id starting custom-stop- is a place the traveler explicitly typed. Search for its exact name and city; include it in the route if it can be verified and fits the trip. If it is ambiguous or cannot be found, ask for its city or street address instead of silently replacing it. An empty selection means no extra stops; do not ask again or insert any optional stops.
 
 ### showRouteOptions
 Use when there are 2+ viable route alternatives (e.g. coastal vs. inland, PCH vs. I-5). Offer route options early in the planning so the user can choose direction. Include distance, EV-aware drive time, highlights, and tags (scenic, fast, eco, popular).
@@ -571,14 +592,19 @@ export async function POST(req: Request) {
   }
 
   const evRangeMiles = getEvRangeMiles(messages)
-  const preferences = planPreferences(messages)
+  const tripMessages = currentTripMessages(messages)
+  const preferences = planPreferences(tripMessages)
   const requestedStops = preferences.requestedNames.length ? ` Named places the traveler requested: ${preferences.requestedNames.join('; ')}.` : ''
   const chosenPlaces = preferences.selectedPlaces.length ? ` Named suggestions the traveler selected: ${preferences.selectedPlaces.map((place) => `${place.name} at ${place.location}`).join('; ')}. Include every one exactly.` : ''
   const selectedTypes = preferences.categories.length ? ` Selected stop types: ${preferences.categories.join(', ')}. Recommend a distinct place for each selected type in addition to the named places.` : ''
-  const paceAdvice = preferences.pace ? ` Pace: ${preferences.pace}. The earlier stop-choice card offered suggestions; plan only the choices the traveler selected plus needed charging. Never replace selected stop types with the named places.` : ''
-  const tripPreferences = requestedStops + chosenPlaces + selectedTypes + paceAdvice
+  const tripPreferences = requestedStops + chosenPlaces + selectedTypes
   const latestUser = [...messages].reverse().find((message) => message.role === 'user')
   const latestUserText = latestUser ? getUserText(latestUser) : ''
+  const hasTripRequest = tripMessages.some((message) => message.role === 'user' && isTripRequest(getUserText(message)))
+  const hasCompletedPlan = tripMessages.some((message) => message.parts.some((part) =>
+    part.type === 'tool-publishPlan' && part.state === 'output-available' && part.output?.valid))
+  const hasRouteChoice = tripMessages.some((message) => message.parts.some((part) =>
+    part.type === 'tool-showRouteOptions' && part.state === 'output-available'))
   const lastAssistant = [...messages].reverse().find((message) => message.role === 'assistant')
   const answeringRangeQuestion = lastAssistant?.parts.some((part) => part.type === 'text' &&
     (part.text.includes(EV_RANGE_QUESTION) || part.text.includes(UNKNOWN_RANGE_QUESTION))) ?? false
@@ -607,6 +633,7 @@ export async function POST(req: Request) {
   }
 
   try {
+    const suggestionMatches: PlaceMatch[] = []
     const result = streamText({
       model: process.env.GOOGLE_GENERATIVE_AI_API_KEY?.trim()
         ? google('gemini-3.1-flash-lite')
@@ -617,29 +644,32 @@ export async function POST(req: Request) {
         ? `${SYSTEM_PROMPT}\n\nThe traveler has not given an EV range yet. ${answeringRangeQuestion ? 'They are responding to your range question. If they supplied an EV model and year, give a clearly labeled approximate range and ask them to confirm it before planning. Otherwise ask for their EV model; do not repeat the same range question, invent a precise range, or plan the route yet.' : 'Their latest message is not a trip request. Respond conversationally and do not mention EV range yet. You may ask where they would like to go.'} Do not generate a route until a numeric range is known or the traveler explicitly accepts a stated planning estimate.`
         : `${SYSTEM_PROMPT}\n\nThe traveler stated an EV full-charge range of ${evRangeMiles} miles. Use this range when planning charging stops and explain your starting-charge and reserve assumptions.${tripPreferences}`,
       messages: modelMessages,
-      tools: { ...tools, showSuggestedStops: verifiedSuggestedStopsTool, publishPlan: createPublishPlanTool(preferences) },
+      tools: {
+        ...tools,
+        findPlaces: createFindPlacesTool((matches) => suggestionMatches.push(...matches)),
+        showSuggestedStops: createSuggestedStopsTool(suggestionMatches),
+        publishPlan: createPublishPlanTool(preferences),
+      },
       providerOptions: {
         google: { thinkingConfig: { thinkingLevel: 'minimal' } },
       },
       stopWhen: [stepCountIs(15), ({ steps }) => steps.some((step) =>
+        step.toolCalls.some((call) => ['showSuggestedStops', 'showRouteOptions'].includes(call.toolName)) ||
         step.toolResults.some((result) => result.toolName === 'publishPlan' &&
           (result.output as { valid?: boolean }).valid === true))],
       prepareStep: ({ steps }) => {
-        if (evRangeMiles !== null && isTripRequest(latestUserText) && !preferences.pace && !preferences.noExtraStops &&
-          !messages.some((message) => message.parts.some((part) => part.type === 'tool-publishPlan' && part.state === 'output-available' && part.output?.valid))) {
-          return { activeTools: ['askMultipleChoice'], toolChoice: { type: 'tool', toolName: 'askMultipleChoice' } }
-        }
-        if (evRangeMiles !== null && preferences.pace && !preferences.hasStopChoice && !preferences.noExtraStops &&
-          !messages.some((message) => message.parts.some((part) => part.type === 'tool-publishPlan' && part.state === 'output-available' && part.output?.valid))) {
+        if (evRangeMiles !== null && hasTripRequest && !preferences.hasStopChoice && !preferences.noExtraStops && !hasCompletedPlan) {
+          if (steps.length === 0 && !hasRouteChoice) {
+            return { activeTools: ['showRouteOptions', 'findPlaces'], toolChoice: 'required' }
+          }
           const lookupResults = steps.flatMap((step) => step.toolResults)
             .filter((result) => result.toolName === 'findPlaces')
-          const target = { relaxed: 9, moderate: 7, flexible: 3, fast: 1 }[preferences.pace]
           const found = new Set(lookupResults.flatMap((result) => {
             const output = result.output as { results?: { matches?: { name: string; address: string | null; area: string; kind: string | null }[] }[] }
             return output.results?.flatMap((entry) => entry.matches ?? []) ?? []
           }).filter((place) => !/charg|supercharger/i.test(`${place.kind} ${place.name}`))
             .map((place) => placeKey(place.name, place.address ?? place.area)))
-          if (found.size < target && lookupResults.length < 3) {
+          if (found.size < 4 && lookupResults.length < 2) {
             return { activeTools: ['findPlaces'], toolChoice: { type: 'tool', toolName: 'findPlaces' } }
           }
           return { activeTools: ['showSuggestedStops'], toolChoice: { type: 'tool', toolName: 'showSuggestedStops' } }
@@ -656,7 +686,7 @@ export async function POST(req: Request) {
             toolChoice: 'required',
           }
         }
-        return { activeTools: ['findPlaces', 'publishPlan', 'askMultipleChoice', 'showSuggestedStops', 'showRouteOptions'] }
+        return { activeTools: ['findPlaces', 'publishPlan', 'showRouteOptions'] }
       },
       abortSignal: req.signal,
     })

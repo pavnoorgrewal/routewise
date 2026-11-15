@@ -276,10 +276,12 @@ function ToolPartRenderer({
       };
       output?: Array<{ id: string; label: string }>;
     };
+    if (!p.input && p.state !== "input-streaming") return null;
+    const chips = p.input?.chips.filter((chip) => !/^no extra stops$/i.test(chip.label.trim())) ?? [];
     return (
       <SuggestedStops
-        title={p.input?.title}
-        chips={p.input?.chips.filter((chip) => !/^no extra stops$/i.test(chip.label.trim())) ?? []}
+        title={chips.length ? p.input?.title : "Add a place to visit (optional)"}
+        chips={chips}
         multiSelect={p.input?.multiSelect ?? true}
         state={p.state === "output-error" ? "input-available" : p.state}
         selectedIds={p.output?.map((o) => o.id)}
