@@ -1,6 +1,6 @@
 'use client'
 
-import { Zap, Clock, Navigation, Plug, Coffee, Wifi } from 'lucide-react'
+import { Zap, Clock, Navigation, Plug, Coffee, Wifi, Bath, Store, Utensils } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export interface ChargingStation {
@@ -50,8 +50,10 @@ function speedLabel(kw: number) {
 const amenityIcons: Record<string, React.ReactNode> = {
   cafe:      <Coffee className="h-3 w-3" />,
   coffee:    <Coffee className="h-3 w-3" />,
+  restaurant: <Utensils className="h-3 w-3" />,
+  convenience: <Store className="h-3 w-3" />,
   wifi:      <Wifi className="h-3 w-3" />,
-  restroom:  <Plug className="h-3 w-3" />,
+  restroom:  <Bath className="h-3 w-3" />,
 }
 
 function AmenityIcon({ label }: { label: string }) {
@@ -113,8 +115,8 @@ export function ChargingStations({
               {/* Info */}
               <div className="flex flex-col gap-1 min-w-0 flex-1">
                 {/* Name + network badge */}
-                <div className="flex items-start justify-between gap-2">
-                  <p className="text-sm font-semibold text-foreground leading-tight">{station.name}</p>
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <p className="text-sm font-semibold text-foreground leading-tight break-words">{station.name}</p>
                   {station.network && (
                     <span className={cn('shrink-0 inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border', net.bg, net.text, net.border)}>
                       <span className={cn('h-1.5 w-1.5 rounded-full', net.dot)} />
@@ -130,7 +132,7 @@ export function ChargingStations({
                   {station.maxKw && (
                     <span className={cn('text-xs font-semibold flex items-center gap-1', speed?.color)}>
                       <Zap className="h-3 w-3" />
-                      {station.maxKw} kW{speed && <span className="font-normal text-muted-foreground">· {speed.label}</span>}
+                      Up to {station.maxKw} kW{speed && <span className="font-normal text-muted-foreground">· {speed.label}</span>}
                     </span>
                   )}
                   {station.ports && (
