@@ -183,10 +183,11 @@ const createFindPlacesTool = (onMatches?: (matches: PlaceMatch[]) => void) => to
     'Look up real US restaurants, parks, scenic stops, and EV charging stations by name and city before including them in a final itinerary. Results come from OpenStreetMap via Photon. Use returned street addresses verbatim; a null address means no street address was found and must not be invented.',
   inputSchema: z.object({
     queries: z.array(z.string().min(3).max(120)).min(1).max(8)
-      .describe('Specific place searches including city and state, e.g. "Tesla Supercharger Folsom CA"'),
+      .describe('Use specific place names and city/state: e.g. Monterey Bay Aquarium Monterey CA, Mission San Juan Bautista CA, Tesla Supercharger Folsom CA. Avoid generic queries like tourist attraction in Monterey. Batch a diverse mix along the selected highway.'),
   }),
   execute: async ({ queries }) => ({
     source: 'OpenStreetMap',
+    planningHint: 'Search specific named landmarks, museums, parks and local restaurants in route towns, not generic tourist attraction queries. If results cover only dining, search named attractions next. Never claim customer ratings from this source.',
     results: await Promise.all(queries.map(async (query) => {
       try {
         const city = /charg|supercharger|evgo|electrify/i.test(query) ? cityInQuery(query) : undefined
@@ -207,8 +208,8 @@ const createFindPlacesTool = (onMatches?: (matches: PlaceMatch[]) => void) => to
         }
         const queryCity = cityInQuery(query)
         onMatches?.(queryCity
-          ? matches.filter((match) => match.area.toLowerCase().includes(queryCity.name.toLowerCase()))
-          : matches)
+          ? [...matches, ...nearbyChargers].filter((match) => match.area.toLowerCase().includes(queryCity.name.toLowerCase()))
+          : [...matches, ...nearbyChargers])
         return { query, matches, nearbyChargers }
       } catch {
         return { query, matches: [], error: 'Lookup unavailable; do not invent an address.' }
@@ -314,8 +315,8 @@ function suggestionCategory(kind: string | null): 'food' | 'coffee' | 'attractio
   if (/cafe|coffee/i.test(kind ?? '')) return 'coffee'
   if (/restaurant|fast_food|food|bakery/i.test(kind ?? '')) return 'food'
   if (/viewpoint|scenic/i.test(kind ?? '')) return 'scenic'
-  if (/museum|theatre|cinema|arts_centre/i.test(kind ?? '')) return 'entertainment'
-  if (/park|garden|nature|attraction|historic|visitor/i.test(kind ?? '')) return 'attraction'
+  if (/theatre|cinema/i.test(kind ?? '')) return 'entertainment'
+  if (/park|garden|nature|attraction|historic|visitor|museum|arts_centre|aquarium|zoo|monument/i.test(kind ?? '')) return 'attraction'
   return 'default'
 }
 
@@ -324,17 +325,18 @@ function createSuggestedStopsTool(matches: PlaceMatch[]) {
     description: 'Present one optional stop picker using real named places found by findPlaces. The server fills the picker from verified lookup results.',
     inputSchema: suggestedStopsSchema.transform((input) => {
       const candidates = matches.filter((match) =>
-        match.name && match.area && !/charg|supercharger|parking|apartment|residential|school|office|gift/i.test(`${match.name} ${match.kind ?? ''}`))
+        match.name && match.area && !/charg|supercharger|parking|apartment|residential|school|office|gift|camp_site|caravan_site|camping|rv park/i.test(`${match.name} ${match.kind ?? ''}`))
+      const distinctCandidates = candidates.filter((match, index) => candidates.findIndex(other => placeKey(other.name, '') === placeKey(match.name, '')) === index)
       const verified = new Map(candidates.map((match) => [placeKey(match.name, match.address ?? match.area), match]))
       const chips = input.chips.flatMap((chip) => {
         const match = chip.location ? verified.get(placeKey(chip.label, chip.location)) : undefined
-        return match ? [{ ...chip, category: suggestionCategory(match.kind), location: match.address ?? match.area }] : []
+        return match ? [{ ...chip, id: `verified-${placeKey(match.name, match.address ?? match.area)}`, category: suggestionCategory(match.kind), location: match.address ?? match.area }] : []
       })
       const used = new Set(chips.map((chip) => placeKey(chip.label, chip.location)))
-      for (const match of candidates) {
+      for (const match of distinctCandidates) {
         const location = match.address ?? match.area
         const key = placeKey(match.name, location)
-        if (used.has(key) || chips.length >= 6) continue
+        if (used.has(key) || chips.some(chip => placeKey(chip.label, '') === placeKey(match.name, '')) || chips.length >= 6) continue
         used.add(key)
         chips.push({
           id: `place-${chips.length}-${key.slice(0, 24).replaceAll(' ', '-')}`,
@@ -395,7 +397,7 @@ const showRouteOptionsTool = tool({
 
 // A completed itinerary is one structured tool call. The client renders its
 // text and existing cards in order, so the model cannot print fake tool calls.
-const createPublishPlanTool = (preferences: PlanPreferences) => tool({
+const createPublishPlanTool = (preferences: PlanPreferences, verifiedMatches: PlaceMatch[] = []) => tool({
   description: 'Publish the completed EV trip in the existing answer layout: plain-text route legs, place cards, charging cards, then the route timeline and Apple Maps and Google Maps links. Every planned stop must have its exact real name and the location returned by findPlaces. Prefer full street addresses; if a named park or landmark has no street address, use its returned city/state and say the address is unavailable. Never invent one.',
   inputSchema: z.object({
     itinerary: z.string().min(20).describe('Plain-text overview and short numbered route legs, including exact place names and full street addresses in driving order. No Markdown symbols or function-call text.'),
@@ -486,9 +488,9 @@ const createPublishPlanTool = (preferences: PlanPreferences) => tool({
         chargingStations: plan.chargingStations.map((station) => ({
           ...station,
           ports: null,
-          maxKw: null,
+          maxKw: verifiedMatches.find(match => placeKey(match.name, match.address ?? match.area) === placeKey(station.name, station.location))?.charging?.maxKw ?? null,
           estimatedChargingTime: null,
-          amenitiesNearby: null,
+          amenitiesNearby: verifiedMatches.find(match => placeKey(match.name, match.address ?? match.area) === placeKey(station.name, station.location))?.charging?.amenities.map(amenity => `${amenity.name} · ${amenity.type} · ~${amenity.distanceMeters} m away (straight-line)`) ?? null,
         })),
       },
     }
@@ -523,6 +525,8 @@ const SYSTEM_PROMPT = `You are Routewise, a friendly and knowledgeable AI road t
 - You do not have access to live maps, road closures, charger status, or reservation systems. State that routes, drive times, and charging suggestions are estimates. Never claim a charger is available, operational, or compatible without verified data.
 - You CAN use findPlaces to search OpenStreetMap place data for names and street addresses. This is a place directory, not live routing or charger-status data. Before naming any restaurant, park entrance, overlook, or charging station as a PLANNED STOP, use findPlaces with the place name and city/state. Prefer a returned match with a full street address and copy it exactly into the itinerary, cards, and summary. Parks and landmarks sometimes have no numbered address; for these, copy the returned city/state area exactly and say that no street address was available. Never invent a street address. Keep the same name and verified location in every view.
 - If the traveler provides a street address or named business for the start or destination, preserve that full location in publishPlan.summary so the map opens at the intended place, rather than reducing it to a city name.
+- Choose reachable, compatible charging alternatives in each charging area by mapped maximum kW FIRST, then the closest mapped restrooms, restaurants, coffee shops and convenience stores within 400 m. Search competing networks together, not only Tesla. Use findPlaces charging.maxKw, charging.connectors and charging.amenities as evidence; compare known speeds before amenities and prefer a shorter detour among otherwise similar candidates. Preserve geographic driving order in the final itinerary. If connector compatibility or the car's charging limit is unknown, ask a concise follow-up when it affects the choice; do not assume every EV can use Tesla chargers. Unknown power is unknown, not slow. Explain the choice in one sentence. Amenities distances are straight-line proximity, not verified walking routes; do not promise restroom access or opening hours.
+- Prioritize a varied set of memorable tourist attractions, museums, landmarks, scenic viewpoints and named local restaurants along the actual chosen corridor. Include coffee and dining as well as attractions unless the traveler narrowed their preferences. Search 4–6 specific names across 2–3 route towns in a single batch; avoid campsites and RV parks unless requested. Choose geographically useful stops, not a cluster at the destination. This place source has NO customer reviews or ratings: never invent stars, review counts, or call a restaurant top-rated. Describe its category and why it fits the route instead.
 - Do not invent exact charger port counts, power ratings, or real-time availability. Use null for unknown fields and invite the traveler to verify the route and charger details before departure.
 - Give the traveler a complete itinerary in plain text before the visual cards: the chosen highways/roads, each leg in driving order with approximate distance and driving time, where and why to charge (including an estimated charging break only if the vehicle and charge assumptions support it), and the specific names and verified locations of restaurants, parks, scenic overlooks, charging stations, or other places they will visit. Explain what they will do at each stop. Distinguish drive time from time spent charging or visiting. If no en-route charge is needed, say so and explain the starting-charge assumption. Be concise: the cards will carry supporting details, so do not repeat their descriptions in long prose.
 - Include only places you are reasonably confident exist. Never fabricate a restaurant, park, charger, address, or precise schedule. Mark uncertain charging locations as candidate areas and ask the traveler to confirm them before departure. If the vehicle, starting state of charge, departure time, or connector is unknown, state the assumption instead of making up a precise charging duration or ETA.
@@ -536,8 +540,8 @@ const SYSTEM_PROMPT = `You are Routewise, a friendly and knowledgeable AI road t
 1. Greet briefly and identify the trip (origin and destination). A casual greeting alone is not a trip request.
 2. Confirm the traveler's full-charge EV range in miles before planning. The server asks for it when a trip request is made without a range; never create a route, route options, or stops before they answer or explain they do not know it.
 3. If multiple viable routes exist, use showRouteOptions to let the user choose one. Do not ask about trip pace.
-4. Use findPlaces to discover named restaurants, coffee shops, museums, park visitor centers, scenic overlooks, and other places in cities along the actual route. Search across the route, including intermediate towns, rather than concentrating at the origin or destination. Then use showSuggestedStops exactly once with multiSelect: true and around 4–6 named places when available. Each chip must be one real named place returned by findPlaces. Set label to its exact returned name, location to its exact returned street address if present or exact area if absent, category to its type, and sublabel to a readable type and city/state (for example "Coffee shop · Sacramento, CA"). Do not offer generic types such as "Nature Parks" or invent named places or addresses. The traveler can also type specific named places and add more than one, or choose no extra stops. Never ask this stop question again after the card appears.
-5. Once the traveler selects places, preserve each selected name and location exactly. Call findPlaces again for every selected suggestion, every manually typed stop, and any needed charging station. Prefer street addresses, but when the source has none for a named stop, use its city/state area and say no street address was available. Use only matching returned names and locations.
+4. During optional-stop suggestions, defer charging-station searches until the traveler has chosen their stops; do not spend time enriching chargers yet. Offer at most one branch of a chain. Use findPlaces to discover named restaurants, coffee shops, museums, park visitor centers, scenic overlooks, and other places in cities along the actual route. Search across the route, including intermediate towns, rather than concentrating at the origin or destination. Then use showSuggestedStops exactly once with multiSelect: true and around 4–6 named places when available. Each chip must be one real named place returned by findPlaces. Set label to its exact returned name, location to its exact returned street address if present or exact area if absent, category to its type, and sublabel to a readable type and city/state (for example "Coffee shop · Sacramento, CA"). Do not offer generic types such as "Nature Parks" or invent named places or addresses. The traveler can also type specific named places and add more than one, or choose no extra stops. Never ask this stop question again after the card appears.
+5. Once the traveler selects places, preserve each selected name and location exactly. Batch lookup every selected suggestion, manually typed stop, and needed charging station in ONE findPlaces call whenever possible; repeated queries are cached. Prefer street addresses, but when the source has none for a named stop, use its city/state area and say no street address was available. Use only matching returned names and locations.
 6. Call publishPlan with the complete itinerary, supporting cards, and summary. Do not write more text or call more tools afterward. This also applies when there are zero intermediate stops: pass empty places, chargingStations, and summary.stops arrays.
 
 ## Tool Usage Guidelines
@@ -648,7 +652,7 @@ export async function POST(req: Request) {
         ...tools,
         findPlaces: createFindPlacesTool((matches) => suggestionMatches.push(...matches)),
         showSuggestedStops: createSuggestedStopsTool(suggestionMatches),
-        publishPlan: createPublishPlanTool(preferences),
+        publishPlan: createPublishPlanTool(preferences, suggestionMatches),
       },
       providerOptions: {
         google: { thinkingConfig: { thinkingLevel: 'minimal' } },
@@ -669,7 +673,8 @@ export async function POST(req: Request) {
             return output.results?.flatMap((entry) => entry.matches ?? []) ?? []
           }).filter((place) => !/charg|supercharger/i.test(`${place.kind} ${place.name}`))
             .map((place) => placeKey(place.name, place.address ?? place.area)))
-          if (found.size < 4 && lookupResults.length < 2) {
+          const kinds = new Set(suggestionMatches.filter(p => !/charg/i.test(p.kind ?? '')).map(p => suggestionCategory(p.kind)).filter(k => k !== 'default'))
+          if ((found.size < 4 || kinds.size < 2) && lookupResults.length < 2) {
             return { activeTools: ['findPlaces'], toolChoice: { type: 'tool', toolName: 'findPlaces' } }
           }
           return { activeTools: ['showSuggestedStops'], toolChoice: { type: 'tool', toolName: 'showSuggestedStops' } }

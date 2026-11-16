@@ -48,14 +48,14 @@ export interface SuggestedStopsProps {
 }
 
 const categoryConfig: Partial<Record<RouteStopCategory, { icon: React.ReactNode; selectedBg: string; selectedText: string; selectedBorder: string; idleBg: string; idleText: string; idleBorder: string }>> = {
-  food:          { icon: <Utensils className="h-3 w-3" />,  selectedBg: 'bg-orange-500',  selectedText: 'text-white', selectedBorder: 'border-orange-500',  idleBg: 'bg-orange-50 dark:bg-orange-950/30',  idleText: 'text-orange-700 dark:text-orange-400', idleBorder: 'border-orange-200 dark:border-orange-800' },
-  coffee:        { icon: <Coffee className="h-3 w-3" />,    selectedBg: 'bg-amber-500',   selectedText: 'text-white', selectedBorder: 'border-amber-500',   idleBg: 'bg-amber-50 dark:bg-amber-950/30',    idleText: 'text-amber-700 dark:text-amber-400',  idleBorder: 'border-amber-200 dark:border-amber-800' },
-  fuel:          { icon: <Zap className="h-3 w-3" />,       selectedBg: 'bg-emerald-500', selectedText: 'text-white', selectedBorder: 'border-emerald-500', idleBg: 'bg-emerald-50 dark:bg-emerald-950/30',idleText: 'text-emerald-700 dark:text-emerald-400',idleBorder: 'border-emerald-200 dark:border-emerald-800' },
-  attraction:    { icon: <Star className="h-3 w-3" />,      selectedBg: 'bg-yellow-500',  selectedText: 'text-white', selectedBorder: 'border-yellow-500',  idleBg: 'bg-yellow-50 dark:bg-yellow-950/30',  idleText: 'text-yellow-700 dark:text-yellow-400', idleBorder: 'border-yellow-200 dark:border-yellow-800' },
-  lodging:       { icon: <Bed className="h-3 w-3" />,       selectedBg: 'bg-violet-500',  selectedText: 'text-white', selectedBorder: 'border-violet-500',  idleBg: 'bg-violet-50 dark:bg-violet-950/30',  idleText: 'text-violet-700 dark:text-violet-400', idleBorder: 'border-violet-200 dark:border-violet-800' },
-  shopping:      { icon: <ShoppingBag className="h-3 w-3" />,selectedBg: 'bg-pink-500',   selectedText: 'text-white', selectedBorder: 'border-pink-500',   idleBg: 'bg-pink-50 dark:bg-pink-950/30',      idleText: 'text-pink-700 dark:text-pink-400',    idleBorder: 'border-pink-200 dark:border-pink-800' },
-  scenic:        { icon: <TreePine className="h-3 w-3" />,  selectedBg: 'bg-green-500',   selectedText: 'text-white', selectedBorder: 'border-green-500',  idleBg: 'bg-green-50 dark:bg-green-950/30',    idleText: 'text-green-700 dark:text-green-400',  idleBorder: 'border-green-200 dark:border-green-800' },
-  entertainment: { icon: <Music className="h-3 w-3" />,     selectedBg: 'bg-indigo-500',  selectedText: 'text-white', selectedBorder: 'border-indigo-500', idleBg: 'bg-indigo-50 dark:bg-indigo-950/30',  idleText: 'text-indigo-700 dark:text-indigo-400',idleBorder: 'border-indigo-200 dark:border-indigo-800' },
+  food:          { icon: <Utensils className="h-3 w-3" />,  selectedBg: 'bg-blue-700',  selectedText: 'text-white', selectedBorder: 'border-blue-700',  idleBg: 'bg-blue-50 dark:bg-blue-950/30',  idleText: 'text-blue-700 dark:text-blue-400', idleBorder: 'border-blue-200 dark:border-blue-800' },
+  coffee:        { icon: <Coffee className="h-3 w-3" />,    selectedBg: 'bg-green-700',   selectedText: 'text-white', selectedBorder: 'border-green-700',   idleBg: 'bg-green-50 dark:bg-green-950/30',    idleText: 'text-green-700 dark:text-green-400',  idleBorder: 'border-green-200 dark:border-green-800' },
+  fuel:          { icon: <Zap className="h-3 w-3" />,       selectedBg: 'bg-amber-700', selectedText: 'text-white', selectedBorder: 'border-amber-700', idleBg: 'bg-amber-50 dark:bg-amber-950/30',idleText: 'text-amber-700 dark:text-amber-400',idleBorder: 'border-amber-200 dark:border-amber-800' },
+  attraction:    { icon: <Star className="h-3 w-3" />,      selectedBg: 'bg-purple-700',  selectedText: 'text-white', selectedBorder: 'border-purple-700',  idleBg: 'bg-purple-50 dark:bg-purple-950/30',  idleText: 'text-purple-700 dark:text-purple-400', idleBorder: 'border-purple-200 dark:border-purple-800' },
+  lodging:       { icon: <Bed className="h-3 w-3" />,       selectedBg: 'bg-violet-700',  selectedText: 'text-white', selectedBorder: 'border-violet-700',  idleBg: 'bg-violet-50 dark:bg-violet-950/30',  idleText: 'text-violet-700 dark:text-violet-400', idleBorder: 'border-violet-200 dark:border-violet-800' },
+  shopping:      { icon: <ShoppingBag className="h-3 w-3" />,selectedBg: 'bg-pink-700',   selectedText: 'text-white', selectedBorder: 'border-pink-700',   idleBg: 'bg-pink-50 dark:bg-pink-950/30',      idleText: 'text-pink-700 dark:text-pink-400',    idleBorder: 'border-pink-200 dark:border-pink-800' },
+  scenic:        { icon: <TreePine className="h-3 w-3" />,  selectedBg: 'bg-teal-700',   selectedText: 'text-white', selectedBorder: 'border-teal-700',  idleBg: 'bg-teal-50 dark:bg-teal-950/30',    idleText: 'text-teal-700 dark:text-teal-400',  idleBorder: 'border-teal-200 dark:border-teal-800' },
+  entertainment: { icon: <Music className="h-3 w-3" />,     selectedBg: 'bg-indigo-700',  selectedText: 'text-white', selectedBorder: 'border-indigo-700', idleBg: 'bg-indigo-50 dark:bg-indigo-950/30',  idleText: 'text-indigo-700 dark:text-indigo-400',idleBorder: 'border-indigo-200 dark:border-indigo-800' },
   default:       { icon: <MapPin className="h-3 w-3" />,    selectedBg: 'bg-foreground',  selectedText: 'text-background', selectedBorder: 'border-foreground', idleBg: 'bg-background', idleText: 'text-foreground', idleBorder: 'border-border' },
 }
 
@@ -131,7 +131,7 @@ export function SuggestedStops({
               <span
                 key={chip.id}
                 className={cn(
-                  'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border',
+                  'inline-flex max-w-full flex-wrap items-center gap-1.5 px-3 py-1.5 rounded-2xl text-xs font-semibold border break-words',
                   cfg.selectedBg, cfg.selectedText, cfg.selectedBorder
                 )}
               >
@@ -156,7 +156,7 @@ export function SuggestedStops({
   }
 
   return (
-    <div className="flex flex-col gap-3 max-w-lg">
+    <div className="flex w-full min-w-0 flex-col gap-3">
       {title && <p className="text-sm font-semibold text-foreground text-balance">{title}</p>}
       <div className="flex flex-wrap gap-2">
         {chips.map((chip) => {
@@ -168,8 +168,9 @@ export function SuggestedStops({
               key={chip.id}
               onClick={() => toggle(chip)}
               disabled={!isSelectable}
+              aria-pressed={isSelected}
               className={cn(
-                'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all',
+                'inline-flex min-h-11 max-w-full flex-wrap items-center gap-1.5 px-3 py-2 rounded-2xl text-left text-xs font-semibold border transition-all break-words',
                 isSelected
                   ? cn(cfg.selectedBg, cfg.selectedText, cfg.selectedBorder)
                   : cn(cfg.idleBg, cfg.idleText, cfg.idleBorder, isSelectable && 'hover:opacity-80'),
@@ -200,7 +201,7 @@ export function SuggestedStops({
                   maxLength={120}
                   disabled={!isSelectable}
                   onChange={(event) => setCustomStops((previous) => previous.map((stop, item) => item === index ? event.target.value : stop))}
-                  className="min-w-0 flex-1 rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-foreground"
+                  className="min-w-0 flex-1 rounded-xl border border-border bg-background px-3 py-2 text-base sm:text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-foreground"
                 />
                 {customStops.length > 1 && (
                   <button type="button" aria-label={`Remove specific stop ${index + 1}`} onClick={() => setCustomStops((previous) => previous.filter((_, item) => item !== index))} className="rounded-full p-2 text-muted-foreground hover:bg-muted hover:text-foreground">
@@ -218,12 +219,12 @@ export function SuggestedStops({
         </div>
       )}
       {multiSelect && isSelectable && (
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={confirm}
             disabled={selectionCount === 0}
             className={cn(
-              'inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-semibold border transition-all',
+              'inline-flex items-center gap-1.5 min-h-11 px-4 py-2 rounded-full text-xs font-semibold border transition-all',
               selectionCount > 0
                 ? 'bg-foreground text-background border-foreground hover:bg-foreground/90 cursor-pointer'
                 : 'bg-muted text-muted-foreground border-border cursor-not-allowed'
@@ -242,7 +243,7 @@ export function SuggestedStops({
         <button
           type="button"
           onClick={skip}
-          className="self-start text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+          className="min-h-11 self-start text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
         >
           No extra stops
         </button>

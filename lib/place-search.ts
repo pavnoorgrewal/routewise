@@ -1,5 +1,10 @@
+import { enrichChargers, type ChargerDetails } from './charging-details'
+
 type PhotonFeature = {
+  geometry?: { coordinates: [number, number] }
   properties: {
+    osm_id?: number
+    osm_type?: string
     name?: string
     housenumber?: string
     street?: string
@@ -14,6 +19,10 @@ type PhotonFeature = {
 }
 
 export type PlaceMatch = {
+  coordinates?: [number, number]
+  osmId?: number
+  osmType?: string
+  charging?: ChargerDetails
   name: string
   address: string | null
   area: string
@@ -21,6 +30,10 @@ export type PlaceMatch = {
 }
 
 type NominatimPlace = {
+  lat?: string
+  lon?: string
+  osm_id?: number
+  osm_type?: string
   name?: string
   type?: string
   address?: {
@@ -42,9 +55,12 @@ let lastFallbackAt = 0
 function searchNominatim(query: string): Promise<PlaceMatch[]> {
   const cached = fallbackCache.get(query)
   if (cached && cached.expiresAt > Date.now()) return Promise.resolve(cached.places)
+  const deadline = Date.now() + 5000
   const task = fallbackQueue.then(async () => {
+    if (Date.now() >= deadline) return []
     const delay = Math.max(0, lastFallbackAt + 1100 - Date.now())
     if (delay) await new Promise((resolve) => setTimeout(resolve, delay))
+    if (Date.now() >= deadline) return []
     lastFallbackAt = Date.now()
     const url = new URL('https://nominatim.openstreetmap.org/search')
     url.searchParams.set('q', query.slice(0, 120))
@@ -53,7 +69,7 @@ function searchNominatim(query: string): Promise<PlaceMatch[]> {
     url.searchParams.set('countrycodes', 'us')
     url.searchParams.set('limit', '5')
     const response = await fetch(url, {
-      signal: AbortSignal.timeout(6000),
+      signal: AbortSignal.timeout(Math.max(1, Math.min(3500, deadline - Date.now()))),
       headers: { 'User-Agent': 'Routewise/1.0 (https://github.com/pavnoorgrewal/routewise)' },
       next: { revalidate: 86_400 },
     })
@@ -66,6 +82,9 @@ function searchNominatim(query: string): Promise<PlaceMatch[]> {
       if (!area) return []
       return [{
         name: place.name,
+        coordinates: place.lon && place.lat ? [Number(place.lon), Number(place.lat)] : undefined,
+        osmId: place.osm_id,
+        osmType: ({ node: 'N', way: 'W', relation: 'R' } as Record<string, string>)[place.osm_type ?? ''],
         address: address.house_number && address.road
           ? `${address.house_number} ${address.road}, ${area}${address.postcode ? ` ${address.postcode}` : ''}`
           : null,
@@ -83,7 +102,7 @@ function searchNominatim(query: string): Promise<PlaceMatch[]> {
 
 // Share the same OpenStreetMap-backed place source as location autocomplete.
 // Only return a street address when the source actually supplies a number and street.
-export async function searchPlaces(query: string): Promise<PlaceMatch[]> {
+async function lookupPlaces(query: string): Promise<PlaceMatch[]> {
   const url = new URL('https://photon.komoot.io/api/')
   url.searchParams.set('q', query.slice(0, 120))
   url.searchParams.set('countrycode', 'US')
@@ -103,7 +122,7 @@ export async function searchPlaces(query: string): Promise<PlaceMatch[]> {
     return searchNominatim(query)
   }
 
-  const matches = (data.features ?? []).flatMap<PlaceMatch>(({ properties: place }) => {
+  const matches = (data.features ?? []).flatMap<PlaceMatch>(({ properties: place, geometry }) => {
     if (place.countrycode !== 'US' || !place.name || place.osm_key === 'place') return []
     const city = place.city || place.locality
     const area = [city, place.state].filter(Boolean).join(', ')
@@ -111,6 +130,9 @@ export async function searchPlaces(query: string): Promise<PlaceMatch[]> {
     const street = [place.housenumber, place.street].filter(Boolean).join(' ')
     return [{
       name: place.name,
+      coordinates: geometry?.coordinates,
+      osmId: place.osm_id,
+      osmType: place.osm_type,
       address: place.housenumber && place.street
         ? `${street}, ${area}${place.postcode ? ` ${place.postcode}` : ''}`
         : null,
@@ -124,5 +146,23 @@ export async function searchPlaces(query: string): Promise<PlaceMatch[]> {
       other.name === match.name && other.address === match.address && other.area === match.area,
     ) === index,
   ).slice(0, 5)
-  return unique.some((match) => match.address) ? unique : searchNominatim(query)
+  return unique.length ? unique : searchNominatim(query)
+}
+
+// Reuse completed lookups and share concurrent identical requests across AI steps.
+const placeCache = new Map<string, { expiresAt: number; places: PlaceMatch[] }>()
+const pending = new Map<string, Promise<PlaceMatch[]>>()
+export function searchPlaces(query: string): Promise<PlaceMatch[]> {
+  const key = query.trim().toLowerCase().replace(/\s+/g, ' ')
+  const cached = placeCache.get(key)
+  if (cached && cached.expiresAt > Date.now()) return Promise.resolve(cached.places)
+  const existing = pending.get(key)
+  if (existing) return existing
+  const task = lookupPlaces(query).then(enrichChargers).then((places) => {
+    if (placeCache.size >= 300) placeCache.delete(placeCache.keys().next().value!)
+    placeCache.set(key, { places, expiresAt: Date.now() + (places.length ? 3_600_000 : 30_000) })
+    return places
+  }).finally(() => pending.delete(key))
+  pending.set(key, task)
+  return task
 }

@@ -406,6 +406,11 @@ function ChatPageInner() {
   }, [searchParams, sendMessage]);
 
   const isLoading = status === "streaming" || status === "submitted";
+  const latestTool = [...(messages.at(-1)?.parts ?? [])].reverse().find(part => part.type.startsWith("tool-"));
+  const loadingLabel = latestTool?.type === "tool-findPlaces" ? "Finding places and checking stop details…"
+    : latestTool?.type === "tool-publishPlan" ? "Putting your itinerary together…"
+    : latestTool?.type === "tool-showSuggestedStops" ? "Preparing your stop suggestions…"
+    : "Planning your route…";
   const isEmpty = messages.length === 0;
 
   const handleSubmit = () => {
@@ -684,7 +689,7 @@ function ChatPageInner() {
               </div>
             );
           })}
-          {isLoading && <LoadingIndicator />}
+          {isLoading && <LoadingIndicator label={loadingLabel} />}
           {error && (
             <div
               role="alert"

@@ -21,13 +21,13 @@ type TimelineNode = {
 }
 
 const categoryStyles: Record<RouteStopCategory, { label: string; icon: React.ReactNode; colors: string }> = {
-  food: { label: 'Food', icon: <Utensils className="h-4 w-4" />, colors: 'border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-800 dark:bg-orange-950' },
-  coffee: { label: 'Coffee', icon: <Coffee className="h-4 w-4" />, colors: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950' },
-  fuel: { label: 'Charging', icon: <Zap className="h-4 w-4" />, colors: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950' },
+  food: { label: 'Restaurant', icon: <Utensils className="h-4 w-4" />, colors: 'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950' },
+  coffee: { label: 'Coffee', icon: <Coffee className="h-4 w-4" />, colors: 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-950' },
+  fuel: { label: 'Charging', icon: <Zap className="h-4 w-4" />, colors: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950' },
   attraction: { label: 'Attraction', icon: <Star className="h-4 w-4" />, colors: 'border-purple-200 bg-purple-50 text-purple-700 dark:border-purple-800 dark:bg-purple-950' },
-  lodging: { label: 'Lodging', icon: <Bed className="h-4 w-4" />, colors: 'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950' },
+  lodging: { label: 'Lodging', icon: <Bed className="h-4 w-4" />, colors: 'border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-800 dark:bg-violet-950' },
   shopping: { label: 'Shopping', icon: <ShoppingBag className="h-4 w-4" />, colors: 'border-pink-200 bg-pink-50 text-pink-700 dark:border-pink-800 dark:bg-pink-950' },
-  scenic: { label: 'Scenic', icon: <TreePine className="h-4 w-4" />, colors: 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-950' },
+  scenic: { label: 'Scenic', icon: <TreePine className="h-4 w-4" />, colors: 'border-teal-200 bg-teal-50 text-teal-700 dark:border-teal-800 dark:bg-teal-950' },
   entertainment: { label: 'Entertainment', icon: <Music className="h-4 w-4" />, colors: 'border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950' },
   default: { label: 'Stop', icon: <MapPin className="h-4 w-4" />, colors: 'border-border bg-muted text-foreground' },
 }
